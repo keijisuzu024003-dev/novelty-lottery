@@ -1,0 +1,357 @@
+/* ノベルティ抽選ルーレット — 見た目
+   配色・フォントは SPEC.md 5章を厳守。Webフォントは読み込まない（Android標準のNoto Sans JPに乗る） */
+
+:root{
+  --bg1:#0B1437;
+  --bg2:#1A2A6C;
+  --gold:#FFC93C;
+  --gold-dark:#E0A200;
+  --red:#FF5C5C;
+  --red-dark:#D93A3A;
+  --blue:#3FA9F5;
+  --blue-dark:#1E7FD4;
+  --ring:#FFD97A;
+  --ink:#FFFFFF;
+  --ink-sub:#A8B4E0;
+  --radius:16px;
+  color-scheme: dark;
+}
+
+*{
+  box-sizing:border-box;
+}
+
+html,body{
+  margin:0;
+  padding:0;
+  width:100%;
+  height:100%;
+  background:var(--bg1);
+  color:var(--ink);
+  font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;
+  /* 展示会の据え置き端末想定。スクロール・拡大・長押しメニューは事故のもとなので全部殺す */
+  overflow:hidden;
+  overscroll-behavior:none;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+}
+
+body{
+  position:fixed;
+  inset:0;
+}
+
+button{
+  font-family:inherit;
+}
+
+/* ---------- 背景 ---------- */
+
+#bg{
+  position:fixed;
+  inset:0;
+  z-index:0;
+  background:radial-gradient(circle at 50% 45%, var(--bg2) 0%, var(--bg1) 72%);
+  overflow:hidden;
+}
+#bg::before{
+  /* ゆっくり回る光条。回転だけを prefers-reduced-motion で止める */
+  content:"";
+  position:absolute;
+  inset:-25%;
+  background:conic-gradient(
+    from 0deg,
+    rgba(255,217,122,0.14),
+    transparent 18%,
+    rgba(255,217,122,0.10) 36%,
+    transparent 54%,
+    rgba(255,217,122,0.14) 72%,
+    transparent 100%
+  );
+  animation:bg-spin 40s linear infinite;
+}
+@media (prefers-reduced-motion: reduce){
+  #bg::before{ animation:none; }
+}
+@keyframes bg-spin{
+  from{ transform:rotate(0deg); }
+  to{ transform:rotate(360deg); }
+}
+
+/* ---------- 円盤ステージ ----------
+   円盤サイズは min(90vw,78vh) 相当。#stage 自体は縦横で位置とサイズが変わる「置き場」で、
+   その置き場の中央に対して #wheel-canvas / #pointer / #logo を絶対配置する */
+
+#stage,#panel{
+  display:none; /* 既定は非表示。状態別ルールで必要な状態だけ display:flex にする */
+}
+
+#stage{
+  --wheel-size:min(90vw, 78vh);
+  position:fixed;
+  z-index:1;
+  align-items:center;
+  justify-content:center;
+}
+
+#wheel-canvas{
+  width:var(--wheel-size);
+  height:var(--wheel-size);
+  border-radius:50%;
+  box-shadow:0 0 0 6px var(--ring), 0 12px 40px rgba(0,0,0,0.5);
+  background:rgba(255,255,255,0.02);
+}
+
+#pointer{
+  /* 円盤の真上・12時方向固定。border-top のみ色を付けた三角形で下向きの矢印を作る */
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:0;
+  height:0;
+  border-left:16px solid transparent;
+  border-right:16px solid transparent;
+  border-top:30px solid var(--ring);
+  filter:drop-shadow(0 3px 6px rgba(0,0,0,0.45));
+  transform:translate(-50%, calc(-1 * var(--wheel-size) / 2 - 22px));
+  transition:transform 90ms ease-out;
+  z-index:3;
+}
+#pointer.bump{
+  animation:pointer-bump 90ms ease-out;
+}
+@keyframes pointer-bump{
+  0%  { margin-top:0; }
+  50% { margin-top:10px; }
+  100%{ margin-top:0; }
+}
+
+#logo{
+  /* 円盤の下に置くと横向き（円盤 78vh）で画面外に出るので、画面の左上へ固定する。
+     ブランド表示は常時出しておきたいが、抽選の邪魔はしない位置 */
+  position:fixed;
+  left:clamp(12px, 2.5vmin, 28px);
+  top:clamp(12px, 2.5vmin, 28px);
+  width:clamp(120px, 18vmin, 240px);
+  opacity:0.72;
+  pointer-events:none;
+  z-index:6;
+}
+
+#logo img{
+  display:block;
+  width:100%;
+  height:auto;
+}
+
+/* ---------- 操作パネル ---------- */
+
+#panel{
+  position:fixed;
+  z-index:1;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:clamp(16px, 3vmin, 40px);
+  padding:24px;
+}
+
+#headline{
+  font-size:clamp(20px, 4vmin, 40px);
+  font-weight:700;
+  letter-spacing:0.06em;
+  color:var(--ink);
+  text-align:center;
+}
+
+#btn-start,#btn-next{
+  font-weight:900;
+  font-size:clamp(22px, 4.6vmin, 46px);
+  letter-spacing:0.08em;
+  color:#2A1A00;
+  background:linear-gradient(#FFE9A8, #F5A623);
+  border:none;
+  border-radius:999px;
+  padding:0.85em 2.4em;
+  min-width:min(70vw, 380px);
+  cursor:pointer;
+  box-shadow:0 10px 26px rgba(0,0,0,0.45), inset 0 2px 0 rgba(255,255,255,0.6);
+}
+
+/* 待機中のスタートボタンは「押していい」ことが遠目に伝わるよう脈打たせる */
+body[data-state="idle"] #btn-start{
+  animation:cta-pulse 1.8s ease-in-out infinite;
+}
+@keyframes cta-pulse{
+  0%,100%{ transform:scale(1);   box-shadow:0 10px 26px rgba(0,0,0,0.45), 0 0 0 0 rgba(255,201,60,0.55); }
+  50%    { transform:scale(1.04); box-shadow:0 10px 30px rgba(0,0,0,0.45), 0 0 0 18px rgba(255,201,60,0); }
+}
+@media (prefers-reduced-motion: reduce){
+  body[data-state="idle"] #btn-start{ animation:none; }
+}
+#btn-start:disabled{
+  /* 回転中は押せない見た目にする（実際の disabled は app.js が付与） */
+  opacity:0.4;
+  filter:grayscale(0.4);
+  cursor:not-allowed;
+  box-shadow:none;
+}
+#btn-start:active:not(:disabled),
+#btn-next:active{
+  transform:translateY(2px);
+}
+
+/* ---------- オーバーレイ共通 ---------- */
+
+#overlay-boot,#overlay-result,#overlay-finished{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:5;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:clamp(16px, 3vmin, 32px);
+  text-align:center;
+  padding:24px;
+  background:rgba(9,16,44,0.86);
+}
+
+#overlay-boot p{
+  margin:0;
+  font-size:clamp(26px, 6vmin, 60px);
+  font-weight:700;
+  color:var(--ink);
+  animation:boot-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){
+  #overlay-boot p{ animation:none; }
+}
+@keyframes boot-pulse{
+  0%,100%{ opacity:1; }
+  50%{ opacity:0.5; }
+}
+
+#result-rank{
+  /* 遠目重視。極大サイズを clamp で確保する */
+  font-size:clamp(48px, 18vmin, 160px);
+  font-weight:900;
+  color:var(--gold);
+  line-height:1.05;
+  text-shadow:0 4px 24px rgba(0,0,0,0.55);
+}
+#result-item{
+  font-size:clamp(24px, 9vmin, 80px);
+  font-weight:700;
+  color:var(--ink);
+  max-width:min(92vw, 1100px);
+  /* 品目名が長いと「…ハンディフ / ァン」のように小書きカナが行頭に落ちる。
+     balance で行の長さを揃え、strict で日本語の禁則処理を効かせる */
+  text-wrap:balance;
+  line-break:strict;
+  overflow-wrap:anywhere;
+}
+/* 文字数に応じて app.js が付け替える。遠目に読める範囲でだけ縮める */
+#result-item.len-m{ font-size:clamp(22px, 6.4vmin, 56px); }
+#result-item.len-l{ font-size:clamp(20px, 5.2vmin, 44px); }
+
+#overlay-finished p{
+  margin:0;
+  font-size:clamp(24px, 5vmin, 48px);
+  color:var(--ink-sub);
+  font-weight:700;
+}
+
+/* ---------- 状態ごとの出し分け（body[data-state] の属性セレクタで一本化） ---------- */
+
+body[data-state="idle"] #stage,
+body[data-state="idle"] #panel,
+body[data-state="spinning"] #stage,
+body[data-state="spinning"] #panel,
+body[data-state="result"] #stage{
+  display:flex;
+}
+body[data-state="boot"] #overlay-boot{ display:flex; }
+body[data-state="result"] #overlay-result{ display:flex; }
+body[data-state="finished"] #overlay-finished{ display:flex; }
+
+/* ---------- 紙吹雪 / フラッシュ ---------- */
+
+#confetti-canvas{
+  position:fixed;
+  inset:0;
+  /* canvas は置換要素なので inset:0 だけでは伸びず固有サイズ 300x150 のままになる。
+     幅高さを明示しないと紙吹雪が画面左上の一部にしか出ない */
+  width:100%;
+  height:100%;
+  z-index:6;
+  pointer-events:none;
+}
+
+#flash{
+  position:fixed;
+  inset:0;
+  z-index:7;
+  background:#FFFFFF;
+  opacity:0;
+  pointer-events:none;
+}
+#flash.on{
+  animation:flash-in-out 120ms ease-out;
+}
+@keyframes flash-in-out{
+  0%  { opacity:0; }
+  40% { opacity:0.85; }
+  100%{ opacity:0; }
+}
+
+/* ---------- 右上ホットスポット / 設定画面 ---------- */
+
+#corner-hotspot{
+  position:fixed;
+  top:0;
+  right:0;
+  width:64px;
+  height:64px;
+  background:transparent;
+  z-index:8; /* 設定画面(20)より下、他の演出要素より上 */
+}
+
+#settings-root{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:20;
+}
+body.settings-open #settings-root{
+  display:block;
+}
+
+/* ---------- 縦横レイアウト ----------
+   横向き = 円盤左・パネル右、縦向き = 円盤上・パネル下。
+   向きが取れない古い環境向けにデフォルト(landscape相当)も用意しておく */
+
+#stage{
+  left:0;
+  top:0;
+  width:66%;
+  height:100%;
+}
+#panel{
+  left:66%;
+  top:0;
+  width:34%;
+  height:100%;
+}
+
+@media (orientation: landscape){
+  #stage{ left:0; top:0; width:66%; height:100%; }
+  #panel{ left:66%; top:0; width:34%; height:100%; }
+}
+
+@media (orientation: portrait){
+  #stage{ left:0; top:0; width:100%; height:66%; }
+  #panel{ left:0; top:66%; width:100%; height:34%; }
+}

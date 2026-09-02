@@ -1,0 +1,26 @@
+{
+  "name": "ノベルティ抽選",
+  "short_name": "抽選",
+  "description": "展示会ブース用ノベルティ抽選ルーレット（オフライン対応PWA）",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0B1437",
+  "theme_color": "#0B1437",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
