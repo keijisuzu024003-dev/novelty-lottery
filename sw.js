@@ -5,7 +5,7 @@
 //
 // 【更新するときは必ずこの CACHE_NAME の数字を1つ上げること】
 // 上げないと、古いキャッシュがそのまま使われ続けて画面が更新されない。
-const CACHE_NAME = 'novelty-lottery-v1';
+const CACHE_NAME = 'novelty-lottery-v2';
 
 // プリキャッシュ対象。相対パス（"./" 起点）で統一する。
 // GitHub Pages のサブディレクトリ配下でも動くよう、絶対パスは使わない。
@@ -24,7 +24,8 @@ const PRECACHE_URLS = [
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
-  './logo.png'
+  './logo.png',
+  './fonts/ShipporiMinchoB1-Bold.subset.woff2'
 ];
 
 // cache.addAll は1つでも失敗すると install ごと失敗する。

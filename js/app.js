@@ -77,6 +77,13 @@ window.NV = window.NV || {};
       wheel = new NV.Wheel(el.wheelCanvas);
       wheel.setRanks(state.ranks);
       wheel.resize();
+      // canvas は CSS の @font-face を待ってくれない。明朝が届く前に描くと
+      // 円盤の等級名だけ端末標準フォントのまま残るので、読み込み完了で描き直す
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(function(){
+          try { wheel.render(); } catch (e) {}
+        })['catch'](function(){});
+      }
       wheel.idle(true);
     } catch (e) {
       // 円盤が描けなくても抽選ロジック自体は進められるようにしておく（当日落ちない優先）

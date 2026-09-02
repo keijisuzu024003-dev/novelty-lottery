@@ -7,11 +7,13 @@ window.NV = window.NV || {};
   "use strict";
 
   var TAU = Math.PI * 2;
-  var MIN_SEG_DEG = 8;          // 1セグメントが下回ってはいけない角度
-  var TARGET_MIN_SEGS = 12;     // 総セグメント数の目安（下限）。少ないと円盤が円グラフに見える
-  var TARGET_MAX_SEGS = 24;     // 総セグメント数の目安（上限。遠目に潰れないよう）
+  var PEG_COUNT = 32;           // リング上の電球＝カチカチ音のもと。扇の枚数とは切り離す
+  var MIN_LABEL_DEG = 12;       // これより細い扇には等級名を出さない（潰れて読めないため）
   var IDLE_SPEED = 0.06;        // 待機中の自転速度 [rad/s]
   var GOLD = "#FFD97A";
+  // 見出し用の明朝（app.css で @font-face 済み）。canvas は CSS を継承しないので
+  // ここでも同じスタックを書く。読み込み完了後に再描画する必要がある（app.js を参照）
+  var DISPLAY_FONT = '"Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN",serif';
 
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
@@ -102,44 +104,14 @@ window.NV = window.NV || {};
     return v;
   }
 
-  // 円環として見たときに同じ等級が隣り合っている箇所を、可能な範囲で解消する。
-  // 隣接している側の1枚を「前後とも別等級」の位置へ移すだけなので、
-  // 各等級の枚数は変わらない＝面積の合計（＝確率）は一切動かさない。
-  // 多数派が過半数を超えている場合は数学的に隣接を消せないので、そのときは減らせるだけ減らす。
-  function repairAdjacency(order) {
-    var n = order.length;
-    if (n < 4) return order;
-
-    for (var pass = 0; pass < n; pass++) {
-      // 継ぎ目を優先して見たいので、末尾→先頭の並びから調べる
-      var bad = -1;
-      for (var i = 0; i < n; i++) {
-        var cur = order[(n - 1 + i) % n];
-        var nxt = order[(n + i) % n];
-        if (cur.rankId === nxt.rankId) { bad = (n + i) % n; break; }
-      }
-      if (bad === -1) return order;                 // 隣接なし
-
-      var moving = order[bad];
-      var rest = order.slice(0, bad).concat(order.slice(bad + 1));
-      var m = rest.length;
-
-      // rest を円環と見て「前後とも moving と別等級」の隙間を探す
-      var slot = -1;
-      for (var j = 0; j < m; j++) {
-        if (rest[j].rankId !== moving.rankId &&
-            rest[(j + 1) % m].rankId !== moving.rankId) { slot = j + 1; break; }
-      }
-      if (slot === -1) return order;                // 置ける隙間が無い＝これ以上は減らせない
-
-      rest.splice(slot, 0, moving);
-      for (var k2 = 0; k2 < n; k2++) order[k2] = rest[k2];
-    }
-    return order;
-  }
-
-  // ---- セグメント生成（設計の肝） ----
-  // weight 通りの面積を保ったまま、各等級を複数セグメントに分割して交互配置する。
+  // ---- セグメント生成 ----
+  // 等級ごとに扇を1枚だけ置き、幅（面積）＝出現確率にする。
+  // 以前は1等級を複数枚に割って交互配置していたが、扇ごとに文字の向きが
+  // 上下バラバラに見えるという指摘があったため1枚にまとめた。文字は回転させず
+  // 常に水平に描くので、向きは常に揃う（_drawLabel を参照）。
+  //
+  // 在庫0の等級は円盤から外して残りで正規化する。外さないと
+  // 「絶対に止まらない大きな扇」が残り、見ている人に不自然に映るため。
   // 例外を投げない：ranks が空 / weight が全部0以下でも必ず何か返す。
   function buildSegments(ranks) {
     var list = [];
@@ -148,94 +120,47 @@ window.NV = window.NV || {};
     } catch (e) {
       list = [];
     }
-
     if (list.length === 0) {
-      // 空盤：グレー1枚
       return [{ rankId: null, rank: null, soldOut: false, start: 0, end: TAU }];
     }
 
-    // weight 正規化。全部0以下なら等分（0除算を避ける）
-    var weights = list.map(function (r) {
+    function stockOf(r) {
+      var n = 0;
+      try {
+        var items = r.items || [];
+        for (var i = 0; i < items.length; i++) {
+          var v = Number(items[i] && items[i].stock);
+          if (isFinite(v) && v > 0) n += v;
+        }
+      } catch (e) { /* 壊れたデータでも落とさない */ }
+      return n;
+    }
+
+    // 在庫のある等級だけを円盤に載せる。全滅していたら見た目維持のため全部載せる
+    var live = list.filter(function (r) { return stockOf(r) > 0; });
+    var soldOutAll = live.length === 0;
+    if (soldOutAll) live = list;
+
+    var weights = live.map(function (r) {
       var w = Number(r.weight);
       return (isFinite(w) && w > 0) ? w : 0;
     });
-    var totalW = weights.reduce(function (a, b) { return a + b; }, 0);
+    var totalW = weights.reduce(function (x, y) { return x + y; }, 0);
     if (totalW <= 0) {
-      weights = list.map(function () { return 1; });
-      totalW = list.length;
-    }
-    var shareDeg = weights.map(function (w) { return (w / totalW) * 360; });
-
-    // 分割数決定：1セグメント8度以上を保ったまま、8〜24本程度を目安に
-    // 「今いちばん大きい断片を持つ等級」を貪欲に分割し続ける
-    var n = list.length;
-    var maxSegs = shareDeg.map(function (d) { return Math.max(1, Math.floor(d / MIN_SEG_DEG)); });
-    var k = list.map(function () { return 1; });
-    var targetTotal = clamp(n * 5, TARGET_MIN_SEGS, TARGET_MAX_SEGS);
-    var total = n;
-    while (total < targetTotal) {
-      var bestIdx = -1, bestSize = -1;
-      for (var i = 0; i < n; i++) {
-        if (k[i] < maxSegs[i]) {
-          var size = shareDeg[i] / k[i];
-          if (size > bestSize) { bestSize = size; bestIdx = i; }
-        }
-      }
-      if (bestIdx === -1) break; // これ以上細分化できない
-      k[bestIdx]++;
-      total++;
+      weights = live.map(function () { return 1; });
+      totalW = live.length;
     }
 
-    // 等級ごとに、分割済みセグメント（角度と在庫状態）の束を作る
-    var buckets = list.map(function (rank, i) {
-      var segDeg = shareDeg[i] / k[i];
-      var stock = 0;
-      try {
-        stock = (rank.items || []).reduce(function (s, it) { return s + (Number(it && it.stock) || 0); }, 0);
-      } catch (e) { stock = 0; }
-      var arr = [];
-      for (var j = 0; j < k[i]; j++) {
-        arr.push({ rankId: rank.id, rank: rank, angleDeg: segDeg, soldOut: stock <= 0 });
-      }
-      return arr;
-    });
-
-    // 隣接回避の貪欲配置：残数が最も多い等級から置く（直前と同じ等級はスキップ）
-    var remaining = buckets.map(function (b) { return b.slice(); });
-    var order = [];
-    var prevIdx = -1;
-    for (var placed = 0; placed < total; placed++) {
-      var pick = -1, pickCount = -1;
-      for (var bi = 0; bi < remaining.length; bi++) {
-        if (remaining[bi].length === 0) continue;
-        if (bi === prevIdx) continue; // 直前と同じ等級は避ける
-        if (remaining[bi].length > pickCount) { pickCount = remaining[bi].length; pick = bi; }
-      }
-      if (pick === -1) {
-        // 直前と同じ等級しか残っていない＝隣接不可避（端の1箇所として許容）
-        for (var bj = 0; bj < remaining.length; bj++) {
-          if (remaining[bj].length > 0) { pick = bj; break; }
-        }
-      }
-      if (pick === -1) break; // もう何も残っていない
-      order.push(remaining[pick].shift());
-      prevIdx = pick;
-    }
-
-    // 貪欲配置は直線としては最適だが、円環の継ぎ目（末尾→先頭）の隣接だけは残ることがある。
-    // しかも継ぎ目は角度0＝ポインタの真下に来るので、同色2枚が並ぶといちばん目立つ。
-    repairAdjacency(order);
-
-    // 真上=0として時計回りに角度を割り当てる
     var segments = [];
     var cursor = 0;
-    for (var s = 0; s < order.length; s++) {
-      var item = order[s];
-      var rad = (item.angleDeg / 360) * TAU;
+    for (var k = 0; k < live.length; k++) {
+      var rad = (weights[k] / totalW) * TAU;
+      // 端数の積み残しで最後に隙間が出ないよう、最後の1枚は残り全部にする
+      if (k === live.length - 1) rad = TAU - cursor;
       segments.push({
-        rankId: item.rankId,
-        rank: item.rank,
-        soldOut: item.soldOut,
+        rankId: live[k].id,
+        rank: live[k],
+        soldOut: soldOutAll,
         start: cursor,
         end: cursor + rad
       });
@@ -326,18 +251,12 @@ window.NV = window.NV || {};
     };
   };
 
-  // prev→curr の回転区間でセグメント境界を何回跨いだか（漏れなく数える）
+  // prev→curr の回転区間でカチカチを何回鳴らすか。
+  // 扇の境界で数えると扇が3枚しかないため1周3回しか鳴らず、回転が安っぽく聞こえる。
+  // リング上の電球（等間隔）を通過した回数で数えることで、扇の枚数と音の密度を切り離す。
   Wheel.prototype._countCrossings = function (prevRotation, currRotation) {
-    var segments = this.segments;
-    if (!segments || segments.length === 0) return 0;
-    var total = 0;
-    for (var i = 0; i < segments.length; i++) {
-      var b = segments[i].start;
-      var n1 = Math.floor((prevRotation + b) / TAU);
-      var n2 = Math.floor((currRotation + b) / TAU);
-      total += (n2 - n1);
-    }
-    return total;
+    var step = TAU / PEG_COUNT;
+    return Math.floor(currRotation / step) - Math.floor(prevRotation / step);
   };
 
   Wheel.prototype.spinTo = function (rankId, opts) {
@@ -491,13 +410,18 @@ window.NV = window.NV || {};
       ctx.stroke();
     }
 
-    for (var l = 0; l < segments.length; l++) {
-      this._drawLabel(ctx, segments[l], radius);
-    }
-
     this._drawRing(ctx, radius);
     this._drawBulbs(ctx, radius);
 
+    ctx.restore();
+
+    // 等級名は円盤と一緒に回さない。回すと扇ごとに上下がバラバラに見えるため、
+    // 位置だけ扇に追従させて文字は常に水平に描く。
+    ctx.save();
+    ctx.translate(cx, cy);
+    for (var l = 0; l < segments.length; l++) {
+      this._drawLabel(ctx, segments[l], radius, this.rotation);
+    }
     ctx.restore();
 
     // ハブは回転させない（中心の「抽選」文字を常に読めるように）
@@ -528,39 +452,35 @@ window.NV = window.NV || {};
     ctx.fill();
   };
 
-  Wheel.prototype._drawLabel = function (ctx, seg, radius) {
+  // 等級名。扇の重心あたりに、常に水平で描く。
+  // ctx には translate(cx,cy) だけが掛かっている前提（回転は掛けない）。
+  Wheel.prototype._drawLabel = function (ctx, seg, radius, rotation) {
     if (!seg.rank || !seg.rank.label) return;
     var widthRad = seg.end - seg.start;
-    var widthDeg = (widthRad / TAU) * 360;
-    if (widthDeg < 14) return; // 潰れる文字は出さない
+    if ((widthRad / TAU) * 360 < MIN_LABEL_DEG) return;
 
-    var mid = (seg.start + seg.end) / 2 - Math.PI / 2;
-    var labelR = radius * 0.62;
-    var fontSize = clamp(radius * 0.11, 14, 40);
+    var label = String(seg.rank.label);
+    var mid = (seg.start + seg.end) / 2 + rotation - Math.PI / 2;
+    var labelR = radius * 0.63;
+
+    // 扇の幅に収まる大きさに抑える。細い扇では小さく、広い扇では上限まで
+    var arcSpace = widthRad * labelR * 0.82;
+    var size = clamp(radius * 0.15, 13, 64);
+    size = Math.min(size, arcSpace / Math.max(1, label.length) * 1.35);
+    if (size < 13) return;
 
     ctx.save();
-    ctx.font = "700 " + fontSize + "px \"Noto Sans JP\",\"Hiragino Sans\",system-ui,sans-serif";
-    var textW = ctx.measureText(seg.rank.label).width;
-    var arcSpace = widthRad * labelR * 0.9;
-    if (textW > arcSpace) {
-      fontSize = clamp(fontSize * (arcSpace / Math.max(1, textW)), 10, fontSize);
-      ctx.font = "700 " + fontSize + "px \"Noto Sans JP\",\"Hiragino Sans\",system-ui,sans-serif";
-      textW = ctx.measureText(seg.rank.label).width;
-      if (textW > arcSpace) { ctx.restore(); return; } // それでも入らないなら諦める
-    }
-
     ctx.translate(Math.cos(mid) * labelR, Math.sin(mid) * labelR);
-    var m = normalizeSigned(mid);
-    var rot = m;
-    if (m > Math.PI / 2 || m < -Math.PI / 2) rot += Math.PI; // 下半分で文字が逆さにならないよう反転
-    ctx.rotate(rot);
-
-    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "700 " + size.toFixed(1) + "px " + DISPLAY_FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = fontSize * 0.15;
-    ctx.fillText(seg.rank.label, 0, 0);
+    // 明朝は横画が細いので、濃い縁取りを付けないと扇の上で溶ける
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(2, size * 0.13);
+    ctx.strokeStyle = "rgba(20,18,10,0.42)";
+    ctx.strokeText(label, 0, 0);
+    ctx.fillStyle = seg.soldOut ? "rgba(255,255,255,0.5)" : "#FFFFFF";
+    ctx.fillText(label, 0, 0);
     ctx.restore();
   };
 
@@ -608,7 +528,7 @@ window.NV = window.NV || {};
     ctx.stroke();
 
     ctx.fillStyle = "#FFFFFF";
-    ctx.font = "700 " + clamp(hubR * 0.42, 12, 28) + "px \"Noto Sans JP\",\"Hiragino Sans\",system-ui,sans-serif";
+    ctx.font = "700 " + clamp(hubR * 0.42, 12, 28) + "px " + DISPLAY_FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("抽選", 0, 0);

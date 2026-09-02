@@ -1,5 +1,22 @@
 /* ノベルティ抽選ルーレット — 見た目
-   配色・フォントは SPEC.md 5章を厳守。Webフォントは読み込まない（Android標準のNoto Sans JPに乗る） */
+   配色は SPEC.md 5章を厳守。
+
+   フォント:
+   端末標準まかせにすると Windows では游ゴシック、Android では Noto Sans に化けて
+   安っぽく見えたため、表示用の明朝を同梱している。外部CDNは使わず自前で配信するので
+   オフラインでも崩れない（Service Worker のキャッシュ対象にも入れてある）。
+   しっぽり明朝B1 / SIL Open Font License 1.1 / fonts/OFL.txt
+   字種は fonts/ の woff2 に必要分だけサブセットしてある（tools/make_font.py）。
+   来場者に見える面（見出し・等級・品目名・ボタン・円盤）は明朝、
+   設定画面など情報量の多い面は端末標準のゴシックにして読みやすさを優先する。 */
+
+@font-face{
+  font-family:"Shippori Mincho B1";
+  src:url("fonts/ShipporiMinchoB1-Bold.subset.woff2") format("woff2");
+  font-weight:700;
+  font-style:normal;
+  font-display:swap;
+}
 
 :root{
   --bg1:#0B1437;
@@ -14,6 +31,8 @@
   --ink:#FFFFFF;
   --ink-sub:#A8B4E0;
   --radius:16px;
+  --font-display:"Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN",serif;
+  --font-ui:"Noto Sans JP","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
   color-scheme: dark;
 }
 
@@ -28,7 +47,7 @@ html,body{
   height:100%;
   background:var(--bg1);
   color:var(--ink);
-  font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;
+  font-family:var(--font-ui);
   /* 展示会の据え置き端末想定。スクロール・拡大・長押しメニューは事故のもとなので全部殺す */
   overflow:hidden;
   overscroll-behavior:none;
@@ -159,7 +178,8 @@ button{
 }
 
 #headline{
-  font-size:clamp(20px, 4vmin, 40px);
+  font-family:var(--font-display);
+  font-size:clamp(22px, 4.4vmin, 44px);
   font-weight:700;
   letter-spacing:0.06em;
   color:var(--ink);
@@ -167,7 +187,8 @@ button{
 }
 
 #btn-start,#btn-next{
-  font-weight:900;
+  font-family:var(--font-display);
+  font-weight:700;
   font-size:clamp(22px, 4.6vmin, 46px);
   letter-spacing:0.08em;
   color:#2A1A00;
@@ -221,6 +242,7 @@ body[data-state="idle"] #btn-start{
 
 #overlay-boot p{
   margin:0;
+  font-family:var(--font-display);
   font-size:clamp(26px, 6vmin, 60px);
   font-weight:700;
   color:var(--ink);
@@ -236,13 +258,15 @@ body[data-state="idle"] #btn-start{
 
 #result-rank{
   /* 遠目重視。極大サイズを clamp で確保する */
+  font-family:var(--font-display);
   font-size:clamp(48px, 18vmin, 160px);
-  font-weight:900;
+  font-weight:700;
   color:var(--gold);
   line-height:1.05;
   text-shadow:0 4px 24px rgba(0,0,0,0.55);
 }
 #result-item{
+  font-family:var(--font-display);
   font-size:clamp(24px, 9vmin, 80px);
   font-weight:700;
   color:var(--ink);
@@ -259,6 +283,7 @@ body[data-state="idle"] #btn-start{
 
 #overlay-finished p{
   margin:0;
+  font-family:var(--font-display);
   font-size:clamp(24px, 5vmin, 48px);
   color:var(--ink-sub);
   font-weight:700;
