@@ -82,14 +82,32 @@ button{
   inset:-25%;
   background:conic-gradient(
     from 0deg,
-    rgba(255,217,122,0.14),
+    rgba(255,217,122,0.11),
     transparent 18%,
-    rgba(255,217,122,0.10) 36%,
+    rgba(255,217,122,0.08) 36%,
     transparent 54%,
-    rgba(255,217,122,0.14) 72%,
+    rgba(255,217,122,0.11) 72%,
     transparent 100%
   );
+  /* ぼかさないと色の切れ目が直線の帯に見えてしまう */
+  filter:blur(60px);
   animation:bg-spin 40s linear infinite;
+}
+
+/* 円盤の後ろの後光。盤が背景から浮き上がる */
+#bg::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:min(120vw, 120vh);
+  height:min(120vw, 120vh);
+  transform:translate(-50%,-50%);
+  background:radial-gradient(circle,
+    rgba(255,201,60,0.13) 0%,
+    rgba(255,201,60,0.05) 32%,
+    rgba(255,201,60,0) 62%);
+  pointer-events:none;
 }
 @media (prefers-reduced-motion: reduce){
   #bg::before{ animation:none; }
@@ -124,26 +142,45 @@ button{
 }
 
 #pointer{
-  /* 円盤の真上・12時方向固定。border-top のみ色を付けた三角形で下向きの矢印を作る */
+  /* 円盤の真上・12時方向に固定した金属の矢。
+     単色の三角形だと安っぽいので、グラデーションと影で厚みを出す */
   position:absolute;
   left:50%;
   top:50%;
-  width:0;
-  height:0;
-  border-left:16px solid transparent;
-  border-right:16px solid transparent;
-  border-top:30px solid var(--ring);
-  filter:drop-shadow(0 3px 6px rgba(0,0,0,0.45));
-  transform:translate(-50%, calc(-1 * var(--wheel-size) / 2 - 22px));
-  transition:transform 90ms ease-out;
+  width:calc(var(--wheel-size) * 0.125);
+  height:calc(var(--wheel-size) * 0.165);
+  min-width:40px;
+  min-height:52px;
+  background:linear-gradient(160deg,#FFF6D6 0%,#F3D275 26%,#B98D28 58%,#7C5A10 100%);
+  clip-path:polygon(50% 100%, 0% 8%, 12% 0%, 88% 0%, 100% 8%);
+  filter:drop-shadow(0 4px 7px rgba(0,0,0,0.55));
+  /* 先端が色の付いた盤面に届くところまで下げる。
+     縁の上で止まっていると「乗っているだけ」に見えて、どこを指しているか伝わらない */
+  transform:translate(-50%, calc(-1 * var(--wheel-size) / 2 - 38%));
   z-index:3;
+}
+/* 矢の付け根の飾り。円盤の外に少しはみ出させて「取り付けられている」感を出す */
+#pointer::before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:-22%;
+  width:52%;
+  height:52%;
+  transform:translateX(-50%);
+  border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,#FFFBEA 0%,#F0CE6E 42%,#8A6412 100%);
+  box-shadow:0 2px 5px rgba(0,0,0,0.5);
+}
+#pointer.bump{
+  animation:pointer-bump 90ms ease-out;
 }
 #pointer.bump{
   animation:pointer-bump 90ms ease-out;
 }
 @keyframes pointer-bump{
   0%  { margin-top:0; }
-  50% { margin-top:10px; }
+  50% { margin-top:8px; }
   100%{ margin-top:0; }
 }
 
@@ -185,6 +222,55 @@ button{
   color:var(--ink);
   text-align:center;
 }
+
+#result-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:clamp(10px, 2vmin, 20px);
+  align-items:center;
+  justify-content:center;
+}
+
+#btn-close{
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:clamp(15px, 2.6vmin, 26px);
+  letter-spacing:0.06em;
+  color:var(--ring);
+  background:transparent;
+  border:2px solid rgba(255,217,122,0.55);
+  border-radius:999px;
+  padding:0.7em 1.6em;
+  cursor:pointer;
+}
+#btn-close:active{ transform:translateY(2px); }
+
+/* 結果を退けているあいだだけ出す。円盤の邪魔をしない位置に小さく置く */
+#btn-reopen{
+  display:none;
+  position:fixed;
+  left:50%;
+  bottom:clamp(14px, 3vmin, 34px);
+  transform:translateX(-50%);
+  z-index:9;
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:clamp(15px, 2.6vmin, 26px);
+  letter-spacing:0.06em;
+  color:#2A1A00;
+  background:linear-gradient(#FFE9A8,#F5A623);
+  border:none;
+  border-radius:999px;
+  padding:0.7em 1.9em;
+  box-shadow:0 8px 20px rgba(0,0,0,0.45);
+  cursor:pointer;
+}
+body.result-peek #btn-reopen{ display:block; }
+/* 退けている間は結果の文字と紙吹雪を隠し、円盤だけを見せる */
+body.result-peek #overlay-result{ opacity:0; pointer-events:none; }
+body.result-peek #confetti-canvas{ opacity:0; }
+#overlay-result{ transition:opacity 180ms ease; }
+@media (prefers-reduced-motion: reduce){ #overlay-result{ transition:none; } }
 
 #btn-start,#btn-next{
   font-family:var(--font-display);

@@ -11,10 +11,12 @@ window.NV = window.NV || {};
   var VENUES = ["名古屋", "大阪", "東京", "福岡"];
 
   // 等級の色（金・赤・青）。等級を増やす場合は末尾に追加していく想定。
+  // 金の縁に負けないよう、深い宝石色にしてある。
+  // 明るいポップな色（#FFC93C / #FF5C5C / #3FA9F5）は軽く見えたため変更した。
   var RANK_COLORS = [
-    { color: "#FFC93C", colorDark: "#E0A200" }, // 1等 金
-    { color: "#FF5C5C", colorDark: "#D93A3A" }, // 2等 赤
-    { color: "#3FA9F5", colorDark: "#1E7FD4" }  // 3等 青
+    { color: "#F0BE30", colorDark: "#8A5F06" }, // 1等 山吹
+    { color: "#C9303F", colorDark: "#6B0F19" }, // 2等 深紅
+    { color: "#2660BE", colorDark: "#0D2A63" }  // 3等 瑠璃
   ];
 
   // 新しい state を作る。展示会開始前の初期化・「工場出荷状態に戻す」用途。

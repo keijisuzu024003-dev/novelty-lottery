@@ -33,6 +33,8 @@ window.NV = window.NV || {};
     el.overlayResult = document.getElementById('overlay-result');
     el.resultRank = document.getElementById('result-rank');
     el.resultItem = document.getElementById('result-item');
+    el.btnClose = document.getElementById('btn-close');
+    el.btnReopen = document.getElementById('btn-reopen');
     el.pointer = document.getElementById('pointer');
     el.cornerHotspot = document.getElementById('corner-hotspot');
     el.wheelCanvas = document.getElementById('wheel-canvas');
@@ -219,6 +221,7 @@ window.NV = window.NV || {};
 
     try { NV.storage.save(state); } catch (e) {}
 
+    setPeek(false);
     if (el.resultRank) { el.resultRank.textContent = result.rankLabel; }
     if (el.resultItem) {
       el.resultItem.textContent = result.itemName;
@@ -242,6 +245,8 @@ window.NV = window.NV || {};
 
     // 在庫0になった等級があれば円盤の見た目（彩度落とし）を更新する
     try { wheel.setRanks(state.ranks); } catch (e) {}
+    // 当たった扇の光を脈打たせるために描画ループを起こす
+    try { wheel.keepGlowing(); } catch (e) {}
 
     scheduleAutoAdvance();
   }
@@ -286,7 +291,23 @@ window.NV = window.NV || {};
   // 次の人へ
   // ---------------------------------------------------------------
 
+  // 結果表示を一時的にどけているかどうか。円盤の停止位置を見せるためだけの状態で、
+  // 抽選の進行（data-state）には影響させない。
+  // AudioContext はタブの復帰やブラウザの都合で suspended に落ちることがある。
+  // 何か触られるたびに resume を投げておけば、次の抽選までに勝手に直る。
+  function nudgeAudio(){
+    try { NV.sound.init(); NV.sound.resume(); } catch (e) {}
+  }
+
+  function setPeek(on){
+    if (!el.body) { return; }
+    if (el.body.dataset.state !== 'result') { on = false; }
+    el.body.classList.toggle('result-peek', !!on);
+    try { NV.sound.ui(); } catch (e) {}
+  }
+
   function nextPerson(){
+    setPeek(false);
     if (el.body.dataset.state !== 'result') { return; }
     clearAutoAdvance();
     try { NV.confetti.stop(); } catch (e) {}
@@ -404,11 +425,32 @@ window.NV = window.NV || {};
     }
 
     if (el.btnNext) {
-      el.btnNext.addEventListener('click', nextPerson);
+      el.btnNext.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        nextPerson();
+      });
+    }
+    // 「円盤を見る」= 結果の文字を一旦どけて、ポインタがどの扇で止まったかを見せる。
+    // 抽選は終わっているので data-state は 'result' のまま動かさない。
+    if (el.btnClose) {
+      el.btnClose.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        setPeek(true);
+      });
+    }
+    if (el.btnReopen) {
+      el.btnReopen.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        setPeek(false);
+      });
     }
     if (el.overlayResult) {
+      // オーバーレイの余白タップでも次の人へ進める（ボタンのタップは上で止めている）
       el.overlayResult.addEventListener('click', nextPerson);
     }
+
+    // ユーザー操作のたびに音を起こし直す（capture で確実に拾う）
+    document.addEventListener('pointerdown', nudgeAudio, true);
 
     document.addEventListener('keydown', function(ev){
       if (ev.code !== 'Space' && ev.code !== 'Enter') { return; }
@@ -418,7 +460,8 @@ window.NV = window.NV || {};
         startSpin();
       } else if (current === 'result') {
         ev.preventDefault();
-        nextPerson();
+        if (el.body.classList.contains('result-peek')) { setPeek(false); }
+        else { nextPerson(); }
       }
     });
 

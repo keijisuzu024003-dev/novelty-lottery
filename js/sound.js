@@ -371,7 +371,25 @@ window.NV = window.NV || {};
     } catch (e) {}
   }
 
+  // 「音が出ない」を現場で切り分けるための状態。
+   // running 以外なら端末やブラウザ側で止められている（タブのミュート、
+   // 音量ミキサー、自動再生の制限など）。アプリ側の音量は master で持っている。
+  function status() {
+    try {
+      if (!ctx) return { ok: false, state: "なし", reason: "音の仕組みが起動していません" };
+      return {
+        ok: ctx.state === "running" && enabled,
+        state: ctx.state,
+        enabled: enabled,
+        volume: master ? +master.gain.value.toFixed(2) : 0
+      };
+    } catch (e) {
+      return { ok: false, state: "不明", reason: String(e && e.message) };
+    }
+  }
+
   window.NV.sound = {
+    status: status,
     init: init,
     resume: resume,
     setEnabled: setEnabled,

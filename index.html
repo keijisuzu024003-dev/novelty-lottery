@@ -37,12 +37,18 @@
   <div id="overlay-result">
     <div id="result-rank"></div>
     <div id="result-item"></div>
-    <button id="btn-next" type="button">次の人へ</button>
+    <div id="result-actions">
+      <button id="btn-close" type="button">円盤を見る</button>
+      <button id="btn-next" type="button">次の人へ</button>
+    </div>
   </div>
 
   <div id="overlay-finished">
     <p>本日の抽選は終了しました</p>
   </div>
+
+  <!-- 結果を退けているあいだだけ出る。もう一度結果に戻すためのボタン -->
+  <button id="btn-reopen" type="button">結果を表示</button>
 
   <!-- 紙吹雪専用キャンバス。最前面かつクリックを奪わないよう pointer-events:none -->
   <canvas id="confetti-canvas"></canvas>

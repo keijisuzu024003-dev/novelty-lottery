@@ -305,6 +305,24 @@ window.NV = window.NV || {};
 
   // ---- 設定画面本体 ---------------------------------------------------
 
+  // 音の状態を設定画面に出す。「鳴らない」が端末側かアプリ側かをその場で切り分けるため
+  function showSoundState() {
+    try {
+      var el = document.querySelector('[data-role="sound-state"]');
+      if (!el) return;
+      var st = (NV.sound && NV.sound.status) ? NV.sound.status() : null;
+      if (!st) { el.textContent = ""; return; }
+      if (st.ok) {
+        el.textContent = "音は出せる状態です（" + st.state + " / 音量 " + st.volume + "）";
+        el.style.color = "#7FE0A8";
+      } else {
+        el.textContent = "音が止まっています（" + st.state + "）"
+          + (st.enabled === false ? " ※アプリ側でOFF" : " ※端末側の可能性");
+        el.style.color = "#FFB4A2";
+      }
+    } catch (e) {}
+  }
+
   function renderSettingsBody() {
     var r = getRoot();
     if (!r) return;
@@ -336,6 +354,14 @@ window.NV = window.NV || {};
           '<div class="nvs-row nvs-toggle-row">' +
             '<label class="nvs-label" style="min-width:auto;">音</label>' +
             '<input type="checkbox" data-action="set-sound" style="width:22px;height:22px;">' +
+            '<button type="button" class="nvs-btn" data-action="test-sound">音をテスト</button>' +
+            '<span class="nvs-muted" data-role="sound-state"></span>' +
+          '</div>' +
+          '<div class="nvs-row">' +
+            '<span class="nvs-muted" style="line-height:1.7;">' +
+              '鳴らないときは端末側です。①タブがミュートになっていないか ' +
+              '②端末のメディア音量 ③音の出力先（外部モニタ等になっていないか）を確認してください。' +
+            '</span>' +
           '</div>' +
           '<div class="nvs-row">' +
             '<span class="nvs-label">自動で次へ(秒)</span>' +
@@ -382,6 +408,8 @@ window.NV = window.NV || {};
     soundBox.checked = !!(state.settings && state.settings.soundOn);
     r.querySelector('[data-action="set-auto"]').value = toNum(state.settings && state.settings.autoAdvanceSec, 0);
     r.querySelector('[data-action="set-itempick"]').value = (state.settings && state.settings.itemPick === "even") ? "even" : "stock-weighted";
+
+    showSoundState();
 
     var ranksWrap = r.querySelector('[data-role="ranks"]');
     var ranks = state.ranks || [];
@@ -535,6 +563,24 @@ window.NV = window.NV || {};
     }
     if (action === "set-sound") {
       state.settings.soundOn = !!t.checked;
+      try { NV.sound.setEnabled(state.settings.soundOn); } catch (e) {}
+      notify();
+      return;
+    }
+    if (action === "test-sound") {
+      // 抽選を回さずに音だけ確かめられるようにする。当日の設営で使う。
+      try {
+        NV.sound.init();
+        NV.sound.resume();
+        NV.sound.setEnabled(true);
+        state.settings.soundOn = true;
+        var box = document.querySelector('[data-action="set-sound"]');
+        if (box) box.checked = true;
+        NV.sound.fanfare(0);
+        setTimeout(function () { try { NV.sound.applause(1.2); } catch (e) {} }, 700);
+      } catch (e) {}
+      showSoundState();
+      setTimeout(showSoundState, 600);
       notify();
       return;
     }
