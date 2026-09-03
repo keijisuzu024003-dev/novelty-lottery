@@ -1,14 +1,20 @@
 /* ノベルティ抽選ルーレット — 見た目
-   配色は SPEC.md 5章を厳守。
+   ------------------------------------------------------------------
+   方針：カジノの福引盤ではなく「精密な計器」として作る。
+   前版は 金の縁＋電球＋光沢 という抽選アプリの典型的な絵面で、
+   「安っぽい・作り物っぽい」と評された。装飾を足す方向をやめ、
+   素材を3つに絞って質感と精度で見せる。
 
-   フォント:
-   端末標準まかせにすると Windows では游ゴシック、Android では Noto Sans に化けて
-   安っぽく見えたため、表示用の明朝を同梱している。外部CDNは使わず自前で配信するので
-   オフラインでも崩れない（Service Worker のキャッシュ対象にも入れてある）。
-   しっぽり明朝B1 / SIL Open Font License 1.1 / fonts/OFL.txt
-   字種は fonts/ の woff2 に必要分だけサブセットしてある（tools/make_font.py）。
-   来場者に見える面（見出し・等級・品目名・ボタン・円盤）は明朝、
-   設定画面など情報量の多い面は端末標準のゴシックにして読みやすさを優先する。 */
+     漆黒（#0B0A09 系）  … 背景。青黒ではなく温かい黒。漆器の面
+     真鍮（#C9A24B 系）  … 縁・指針・罫。磨きと影の差だけで金属に見せる
+     生成り（#EFE7D6）   … 景品を載せる台。和紙・磁器の白
+
+   扇の色は日本の伝統色（山吹・深緋・縹）。RGB原色を避けることで
+   既製品めいた配色から離す。
+
+   フォント：しっぽり明朝B1（SIL OFL, fonts/OFL.txt）をサブセットして同梱。
+   端末標準まかせだと Windows で游ゴシック、Android で Noto Sans に化けるため。
+   来場者に見える面は明朝、設定画面は端末標準のゴシック（情報量が多いので可読性優先）。 */
 
 @font-face{
   font-family:"Shippori Mincho B1";
@@ -19,37 +25,40 @@
 }
 
 :root{
-  --bg1:#0B1437;
-  --bg2:#1A2A6C;
-  --gold:#FFC93C;
-  --gold-dark:#E0A200;
-  --red:#FF5C5C;
-  --red-dark:#D93A3A;
-  --blue:#3FA9F5;
-  --blue-dark:#1E7FD4;
-  --ring:#FFD97A;
-  --ink:#FFFFFF;
-  --ink-sub:#A8B4E0;
-  --radius:16px;
+  --lacquer-0:#0B0A09;
+  --lacquer-1:#131110;
+  --lacquer-2:#1C1917;
+
+  --brass-hi:#F2DFAD;
+  --brass:#C9A24B;
+  --brass-mid:#9C7A2E;
+  --brass-lo:#5E4715;
+
+  --washi:#EFE7D6;
+  --washi-edge:#D8CDB6;
+
+  --ink:#F4EFE4;
+  --ink-dim:#9A9081;
+  /* 扇の色は js/defaults.js と会場データJSON が持つ。ここでは参照しない */
+
   --font-display:"Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN",serif;
   --font-ui:"Noto Sans JP","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
-  color-scheme: dark;
+
+  --wheel:min(86vw, 74vh);
+
+  color-scheme:dark;
 }
 
-*{
-  box-sizing:border-box;
-}
+*{ box-sizing:border-box; }
 
 html,body{
   margin:0;
-  padding:0;
-  width:100%;
   height:100%;
-  background:var(--bg1);
+  overflow:hidden;
+  background:var(--lacquer-0);
   color:var(--ink);
   font-family:var(--font-ui);
-  /* 展示会の据え置き端末想定。スクロール・拡大・長押しメニューは事故のもとなので全部殺す */
-  overflow:hidden;
+  /* 会場では触られ続ける。スクロール・拡大・長押しメニュー・引っぱって更新を全部止める */
   overscroll-behavior:none;
   user-select:none;
   -webkit-user-select:none;
@@ -57,13 +66,11 @@ html,body{
   touch-action:manipulation;
 }
 
-body{
-  position:fixed;
-  inset:0;
-}
-
 button{
   font-family:inherit;
+  color:inherit;
+  -webkit-appearance:none;
+  appearance:none;
 }
 
 /* ---------- 背景 ---------- */
@@ -72,243 +79,244 @@ button{
   position:fixed;
   inset:0;
   z-index:0;
-  background:radial-gradient(circle at 50% 45%, var(--bg2) 0%, var(--bg1) 72%);
-  overflow:hidden;
+  /* 漆の面。光は上からごく浅く落ちるだけにして、装飾的な光条は置かない */
+  background:
+    radial-gradient(120% 90% at 50% -18%, #24201B 0%, rgba(36,32,27,0) 62%),
+    linear-gradient(#0F0D0C 0%, #0B0A09 55%, #070605 100%);
 }
-#bg::before{
-  /* ゆっくり回る光条。回転だけを prefers-reduced-motion で止める */
-  content:"";
-  position:absolute;
-  inset:-25%;
-  background:conic-gradient(
-    from 0deg,
-    rgba(255,217,122,0.11),
-    transparent 18%,
-    rgba(255,217,122,0.08) 36%,
-    transparent 54%,
-    rgba(255,217,122,0.11) 72%,
-    transparent 100%
-  );
-  /* ぼかさないと色の切れ目が直線の帯に見えてしまう */
-  filter:blur(60px);
-  animation:bg-spin 40s linear infinite;
-}
-
-/* 円盤の後ろの後光。盤が背景から浮き上がる */
+/* 粒状のノイズ。均一なグラデーションはCG然として見えるので、わずかに荒らす */
 #bg::after{
   content:"";
   position:absolute;
-  left:50%;
-  top:50%;
-  width:min(120vw, 120vh);
-  height:min(120vw, 120vh);
-  transform:translate(-50%,-50%);
-  background:radial-gradient(circle,
-    rgba(255,201,60,0.13) 0%,
-    rgba(255,201,60,0.05) 32%,
-    rgba(255,201,60,0) 62%);
-  pointer-events:none;
-}
-@media (prefers-reduced-motion: reduce){
-  #bg::before{ animation:none; }
-}
-@keyframes bg-spin{
-  from{ transform:rotate(0deg); }
-  to{ transform:rotate(360deg); }
+  inset:0;
+  opacity:0.05;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.5'/></svg>");
 }
 
-/* ---------- 円盤ステージ ----------
-   円盤サイズは min(90vw,78vh) 相当。#stage 自体は縦横で位置とサイズが変わる「置き場」で、
-   その置き場の中央に対して #wheel-canvas / #pointer / #logo を絶対配置する */
+/* ---------- 骨格 ---------- */
 
-#stage,#panel{
-  display:none; /* 既定は非表示。状態別ルールで必要な状態だけ display:flex にする */
-}
-
-#stage{
-  --wheel-size:min(90vw, 78vh);
+#frame{
   position:fixed;
+  inset:0;
   z-index:1;
+  display:none;
   align-items:center;
   justify-content:center;
+  gap:clamp(20px, 4vw, 72px);
+  padding:clamp(14px, 2.5vmin, 34px);
+}
+body[data-state="idle"] #frame,
+body[data-state="spinning"] #frame,
+body[data-state="result"] #frame{ display:flex; }
+/* 結果表示中は円盤だけを残す。操作パネルが幕越しに透けると出しっぱなしに見える */
+body[data-state="result"] #panel{ visibility:hidden; }
+/* 円盤も中央へ寄せて、結果の文字と軸を合わせる */
+body[data-state="result"] #frame{ justify-content:center; }
+body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
+
+/* 横向き＝円盤と情報を左右に。縦向き＝上下に積む */
+@media (orientation: landscape){
+  #frame{ flex-direction:row; }
+  :root{ --wheel:min(49vw, 86vh); }
+}
+@media (orientation: portrait){
+  #frame{
+    flex-direction:column;
+    /* 指針は円盤の外へ出るので、その分だけ上を空けないと画面端で切れる */
+    padding-top:calc(clamp(14px, 2.5vmin, 34px) + var(--wheel) * 0.07);
+  }
+  :root{ --wheel:min(84vw, 48vh); }
+}
+
+/* ---------- 円盤 ---------- */
+
+#stage{
+  position:relative;
+  flex:0 0 auto;
+  width:var(--wheel);
+  height:var(--wheel);
+  display:grid;
+  place-items:center;
 }
 
 #wheel-canvas{
-  width:var(--wheel-size);
-  height:var(--wheel-size);
-  border-radius:50%;
-  box-shadow:0 0 0 6px var(--ring), 0 12px 40px rgba(0,0,0,0.5);
-  background:rgba(255,255,255,0.02);
+  width:100%;
+  height:100%;
+  display:block;
 }
 
+/* 12時方向の指針。太い三角ではなく、計器の針のように細く長く */
 #pointer{
-  /* 円盤の真上・12時方向に固定した金属の矢。
-     単色の三角形だと安っぽいので、グラデーションと影で厚みを出す */
   position:absolute;
   left:50%;
-  top:50%;
-  width:calc(var(--wheel-size) * 0.125);
-  height:calc(var(--wheel-size) * 0.165);
-  min-width:40px;
-  min-height:52px;
-  background:linear-gradient(160deg,#FFF6D6 0%,#F3D275 26%,#B98D28 58%,#7C5A10 100%);
-  clip-path:polygon(50% 100%, 0% 8%, 12% 0%, 88% 0%, 100% 8%);
-  filter:drop-shadow(0 4px 7px rgba(0,0,0,0.55));
-  /* 先端が色の付いた盤面に届くところまで下げる。
-     縁の上で止まっていると「乗っているだけ」に見えて、どこを指しているか伝わらない */
-  transform:translate(-50%, calc(-1 * var(--wheel-size) / 2 - 38%));
+  top:0;
+  width:calc(var(--wheel) * 0.052);
+  height:calc(var(--wheel) * 0.125);
+  min-width:16px;
+  min-height:40px;
+  transform:translate(-50%, -34%);
+  transform-origin:50% 22%;
+  background:linear-gradient(100deg,
+    #5E4715 0%, #C9A24B 34%, #F2DFAD 50%, #C9A24B 66%, #5E4715 100%);
+  clip-path:polygon(50% 100%, 8% 26%, 26% 0%, 74% 0%, 92% 26%);
+  filter:drop-shadow(0 0 1.5px rgba(0,0,0,0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.8));
   z-index:3;
 }
-/* 矢の付け根の飾り。円盤の外に少しはみ出させて「取り付けられている」感を出す */
+/* 針の付け根。軸受けに見せる */
 #pointer::before{
   content:"";
   position:absolute;
   left:50%;
-  top:-22%;
-  width:52%;
-  height:52%;
+  top:-30%;
+  width:78%;
+  aspect-ratio:1;
   transform:translateX(-50%);
   border-radius:50%;
-  background:radial-gradient(circle at 34% 30%,#FFFBEA 0%,#F0CE6E 42%,#8A6412 100%);
-  box-shadow:0 2px 5px rgba(0,0,0,0.5);
+  background:radial-gradient(circle at 36% 30%, #F2DFAD 0%, #C9A24B 40%, #5E4715 100%);
+  box-shadow:0 2px 6px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(0,0,0,0.35);
 }
-#pointer.bump{
-  animation:pointer-bump 90ms ease-out;
-}
-#pointer.bump{
-  animation:pointer-bump 90ms ease-out;
-}
+#pointer.bump{ animation:pointer-bump 90ms ease-out; }
 @keyframes pointer-bump{
-  0%  { margin-top:0; }
-  50% { margin-top:8px; }
-  100%{ margin-top:0; }
-}
-
-#logo{
-  /* 円盤の下に置くと横向き（円盤 78vh）で画面外に出るので、画面の左上へ固定する。
-     ブランド表示は常時出しておきたいが、抽選の邪魔はしない位置 */
-  position:fixed;
-  left:clamp(12px, 2.5vmin, 28px);
-  top:clamp(12px, 2.5vmin, 28px);
-  width:clamp(120px, 18vmin, 240px);
-  opacity:0.72;
-  pointer-events:none;
-  z-index:6;
-}
-
-#logo img{
-  display:block;
-  width:100%;
-  height:auto;
-}
-
-/* ---------- 操作パネル ---------- */
-
-#panel{
-  position:fixed;
-  z-index:1;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:clamp(16px, 3vmin, 40px);
-  padding:24px;
-}
-
-#headline{
-  font-family:var(--font-display);
-  font-size:clamp(22px, 4.4vmin, 44px);
-  font-weight:700;
-  letter-spacing:0.06em;
-  color:var(--ink);
-  text-align:center;
-}
-
-#result-actions{
-  display:flex;
-  flex-wrap:wrap;
-  gap:clamp(10px, 2vmin, 20px);
-  align-items:center;
-  justify-content:center;
-}
-
-#btn-close{
-  font-family:var(--font-display);
-  font-weight:700;
-  font-size:clamp(15px, 2.6vmin, 26px);
-  letter-spacing:0.06em;
-  color:var(--ring);
-  background:transparent;
-  border:2px solid rgba(255,217,122,0.55);
-  border-radius:999px;
-  padding:0.7em 1.6em;
-  cursor:pointer;
-}
-#btn-close:active{ transform:translateY(2px); }
-
-/* 結果を退けているあいだだけ出す。円盤の邪魔をしない位置に小さく置く */
-#btn-reopen{
-  display:none;
-  position:fixed;
-  left:50%;
-  bottom:clamp(14px, 3vmin, 34px);
-  transform:translateX(-50%);
-  z-index:9;
-  font-family:var(--font-display);
-  font-weight:700;
-  font-size:clamp(15px, 2.6vmin, 26px);
-  letter-spacing:0.06em;
-  color:#2A1A00;
-  background:linear-gradient(#FFE9A8,#F5A623);
-  border:none;
-  border-radius:999px;
-  padding:0.7em 1.9em;
-  box-shadow:0 8px 20px rgba(0,0,0,0.45);
-  cursor:pointer;
-}
-body.result-peek #btn-reopen{ display:block; }
-/* 退けている間は結果の文字と紙吹雪を隠し、円盤だけを見せる */
-body.result-peek #overlay-result{ opacity:0; pointer-events:none; }
-body.result-peek #confetti-canvas{ opacity:0; }
-#overlay-result{ transition:opacity 180ms ease; }
-@media (prefers-reduced-motion: reduce){ #overlay-result{ transition:none; } }
-
-#btn-start,#btn-next{
-  font-family:var(--font-display);
-  font-weight:700;
-  font-size:clamp(22px, 4.6vmin, 46px);
-  letter-spacing:0.08em;
-  color:#2A1A00;
-  background:linear-gradient(#FFE9A8, #F5A623);
-  border:none;
-  border-radius:999px;
-  padding:0.85em 2.4em;
-  min-width:min(70vw, 380px);
-  cursor:pointer;
-  box-shadow:0 10px 26px rgba(0,0,0,0.45), inset 0 2px 0 rgba(255,255,255,0.6);
-}
-
-/* 待機中のスタートボタンは「押していい」ことが遠目に伝わるよう脈打たせる */
-body[data-state="idle"] #btn-start{
-  animation:cta-pulse 1.8s ease-in-out infinite;
-}
-@keyframes cta-pulse{
-  0%,100%{ transform:scale(1);   box-shadow:0 10px 26px rgba(0,0,0,0.45), 0 0 0 0 rgba(255,201,60,0.55); }
-  50%    { transform:scale(1.04); box-shadow:0 10px 30px rgba(0,0,0,0.45), 0 0 0 18px rgba(255,201,60,0); }
+  0%  { transform:translate(-50%, -34%) rotate(0deg); }
+  50% { transform:translate(-50%, -34%) rotate(7deg); }
+  100%{ transform:translate(-50%, -34%) rotate(0deg); }
 }
 @media (prefers-reduced-motion: reduce){
-  body[data-state="idle"] #btn-start{ animation:none; }
+  #pointer.bump{ animation:none; }
 }
+
+/* ---------- 情報側 ---------- */
+
+#panel{
+  flex:1 1 auto;
+  min-width:0;
+  max-width:min(52ch, 46vw);
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:clamp(14px, 2.6vmin, 30px);
+}
+@media (orientation: portrait){
+  #panel{
+    max-width:min(46ch, 92vw);
+    align-items:center;
+    text-align:center;
+  }
+}
+
+#brand{ display:flex; flex-direction:column; gap:6px; }
+@media (orientation: portrait){ #brand{ align-items:center; } }
+
+#logo{
+  display:block;
+  width:clamp(104px, 13.5vmin, 172px);
+  height:auto;
+  opacity:0.9;
+}
+#eyebrow{
+  font-size:clamp(10px, 1.5vmin, 13px);
+  letter-spacing:0.42em;
+  text-indent:0.42em;
+  color:var(--ink-dim);
+}
+
+/* 待機中に景品を順に見せる札 */
+#prize-card{
+  display:flex;
+  align-items:center;
+  gap:clamp(12px, 2vmin, 22px);
+  opacity:0;
+  transition:opacity 520ms ease;
+}
+body[data-state="idle"] #prize-card{ opacity:1; }
+#prize-card.swap{ opacity:0; }
+@media (prefers-reduced-motion: reduce){ #prize-card{ transition:none; } }
+
+/* 生成りの台。漆黒と真鍮に対する第三の素材 */
+.plate{
+  flex:0 0 auto;
+  width:clamp(84px, 15vmin, 168px);
+  aspect-ratio:1;
+  border-radius:50%;
+  background:radial-gradient(circle at 38% 30%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
+  box-shadow:0 10px 26px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.5);
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+.plate img{
+  width:78%;
+  height:78%;
+  object-fit:contain;
+  display:block;
+}
+
+#prize-card .meta{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+}
+#prize-card .rank{
+  font-family:var(--font-display);
+  font-size:clamp(12px, 1.9vmin, 17px);
+  letter-spacing:0.3em;
+  color:var(--brass);
+}
+#prize-card .name{
+  font-family:var(--font-display);
+  font-size:clamp(15px, 2.5vmin, 25px);
+  line-height:1.5;
+  color:var(--ink);
+  text-wrap:balance;
+}
+
+/* 操作ボタン。丸い飴玉ではなく、真鍮の細い罫で囲った帯にする */
+#btn-start{
+  position:relative;
+  width:100%;
+  min-height:clamp(62px, 9vmin, 92px);
+  padding:0 clamp(20px, 3vw, 44px);
+  border:1px solid #9C7A2E;
+  border-radius:2px;
+  background:linear-gradient(#1C1917, #131110);
+  color:var(--brass-hi);
+  font-family:var(--font-display);
+  font-size:clamp(19px, 3.1vmin, 34px);
+  letter-spacing:0.34em;
+  text-indent:0.34em;
+  cursor:pointer;
+  overflow:hidden;
+  transition:color 200ms ease, border-color 200ms ease;
+}
+/* 罫の内側をゆっくり満たす光。待機中だけ動かして「押していい」ことを示す */
+#btn-start::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(100deg,
+    rgba(242,223,173,0) 20%, rgba(242,223,173,0.16) 50%, rgba(242,223,173,0) 80%);
+  transform:translateX(-100%);
+}
+body[data-state="idle"] #btn-start::after{
+  animation:sheen 3.4s ease-in-out infinite;
+}
+@keyframes sheen{
+  0%   { transform:translateX(-100%); }
+  55%  { transform:translateX(100%); }
+  100% { transform:translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce){
+  body[data-state="idle"] #btn-start::after{ animation:none; }
+}
+#btn-start:active:not(:disabled){ background:#1C1917; }
 #btn-start:disabled{
-  /* 回転中は押せない見た目にする（実際の disabled は app.js が付与） */
-  opacity:0.4;
-  filter:grayscale(0.4);
+  color:var(--ink-dim);
+  border-color:#3A342B;
   cursor:not-allowed;
-  box-shadow:none;
 }
-#btn-start:active:not(:disabled),
-#btn-next:active{
-  transform:translateY(2px);
-}
+#btn-start:disabled::after{ display:none; }
+#btn-start span{ position:relative; z-index:1; }
 
 /* ---------- オーバーレイ共通 ---------- */
 
@@ -317,152 +325,231 @@ body[data-state="idle"] #btn-start{
   position:fixed;
   inset:0;
   z-index:5;
-  flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:clamp(16px, 3vmin, 32px);
   text-align:center;
-  padding:24px;
-  background:rgba(9,16,44,0.86);
-}
-
-#overlay-boot p{
-  margin:0;
-  font-family:var(--font-display);
-  font-size:clamp(26px, 6vmin, 60px);
-  font-weight:700;
-  color:var(--ink);
-  animation:boot-pulse 1.6s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce){
-  #overlay-boot p{ animation:none; }
-}
-@keyframes boot-pulse{
-  0%,100%{ opacity:1; }
-  50%{ opacity:0.5; }
-}
-
-#result-rank{
-  /* 遠目重視。極大サイズを clamp で確保する */
-  font-family:var(--font-display);
-  font-size:clamp(48px, 18vmin, 160px);
-  font-weight:700;
-  color:var(--gold);
-  line-height:1.05;
-  text-shadow:0 4px 24px rgba(0,0,0,0.55);
-}
-#result-item{
-  font-family:var(--font-display);
-  font-size:clamp(24px, 9vmin, 80px);
-  font-weight:700;
-  color:var(--ink);
-  max-width:min(92vw, 1100px);
-  /* 品目名が長いと「…ハンディフ / ァン」のように小書きカナが行頭に落ちる。
-     balance で行の長さを揃え、strict で日本語の禁則処理を効かせる */
-  text-wrap:balance;
-  line-break:strict;
-  overflow-wrap:anywhere;
-}
-/* 文字数に応じて app.js が付け替える。遠目に読める範囲でだけ縮める */
-#result-item.len-m{ font-size:clamp(22px, 6.4vmin, 56px); }
-#result-item.len-l{ font-size:clamp(20px, 5.2vmin, 44px); }
-
-#overlay-finished p{
-  margin:0;
-  font-family:var(--font-display);
-  font-size:clamp(24px, 5vmin, 48px);
-  color:var(--ink-sub);
-  font-weight:700;
-}
-
-/* ---------- 状態ごとの出し分け（body[data-state] の属性セレクタで一本化） ---------- */
-
-body[data-state="idle"] #stage,
-body[data-state="idle"] #panel,
-body[data-state="spinning"] #stage,
-body[data-state="spinning"] #panel,
-body[data-state="result"] #stage{
-  display:flex;
+  padding:clamp(18px, 4vmin, 48px);
 }
 body[data-state="boot"] #overlay-boot{ display:flex; }
 body[data-state="result"] #overlay-result{ display:flex; }
 body[data-state="finished"] #overlay-finished{ display:flex; }
 
-/* ---------- 紙吹雪 / フラッシュ ---------- */
+#overlay-boot{
+  background:#0B0A09;
+  flex-direction:column;
+}
+.boot-inner{ display:flex; flex-direction:column; align-items:center; gap:clamp(26px, 6vmin, 60px); }
+.boot-logo{ width:clamp(150px, 26vmin, 300px); height:auto; opacity:0.72; }
+#overlay-boot p{
+  margin:0;
+  font-family:var(--font-display);
+  font-size:clamp(19px, 3.4vmin, 36px);
+  letter-spacing:0.26em;
+  text-indent:0.26em;
+  color:var(--brass);
+  animation:breathe 2.6s ease-in-out infinite;
+}
+@keyframes breathe{ 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
+@media (prefers-reduced-motion: reduce){ #overlay-boot p{ animation:none; } }
+
+/* ---------- 結果 ---------- */
+
+#overlay-result{
+  /* 円盤を沈めて文字を立てる。中心を少し明るく残して奥行きを出す */
+  background:radial-gradient(90% 70% at 50% 46%, rgba(11,10,9,0.80) 0%, rgba(7,6,5,0.96) 70%);
+  transition:opacity 200ms ease;
+}
+.result-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:clamp(10px, 2vmin, 22px);
+  max-width:min(92vw, 1100px);
+}
+@media (orientation: landscape){
+  .result-inner{ gap:clamp(8px, 1.6vmin, 18px); }
+}
+
+#result-rank{
+  font-family:var(--font-display);
+  font-size:clamp(40px, 12vmin, 132px);
+  line-height:1.05;
+  letter-spacing:0.14em;
+  text-indent:0.14em;
+  /* 平坦な金色ではなく、上下で明暗が変わる金属の面として塗る */
+  background:linear-gradient(178deg,
+    #F2DFAD 6%, #E7C878 30%, #C9A24B 52%, #A9832F 74%, #F2DFAD 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  filter:drop-shadow(0 3px 10px rgba(0,0,0,0.6));
+}
+
+#result-plate{
+  width:clamp(112px, 26vmin, 260px);
+  aspect-ratio:1;
+  border-radius:50%;
+  background:radial-gradient(circle at 38% 28%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
+  box-shadow:0 16px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.55);
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  animation:plate-in 520ms cubic-bezier(.2,.9,.25,1.05) both;
+}
+#result-plate img{ width:76%; height:76%; object-fit:contain; display:block; }
+#result-plate.hidden{ display:none; }
+@keyframes plate-in{
+  from{ transform:scale(0.72); opacity:0; }
+  to  { transform:scale(1); opacity:1; }
+}
+@media (prefers-reduced-motion: reduce){ #result-plate{ animation:none; } }
+
+#result-item{
+  font-family:var(--font-display);
+  font-size:clamp(19px, 4.2vmin, 46px);
+  line-height:1.5;
+  letter-spacing:0.06em;
+  color:var(--ink);
+  max-width:min(90vw, 22em);
+  text-wrap:balance;
+  line-break:strict;
+  overflow-wrap:anywhere;
+}
+#result-item.len-m{ font-size:clamp(17px, 3.3vmin, 34px); }
+#result-item.len-l{ font-size:clamp(16px, 2.7vmin, 28px); }
+
+#result-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:clamp(10px, 2vmin, 22px);
+  align-items:center;
+  justify-content:center;
+  margin-top:clamp(6px, 1.4vmin, 16px);
+}
+
+#btn-next{
+  position:relative;
+  min-height:clamp(56px, 8vmin, 78px);
+  padding:0 clamp(30px, 5vw, 62px);
+  border:1px solid #9C7A2E;
+  border-radius:2px;
+  background:linear-gradient(#1C1917, #131110);
+  color:var(--brass-hi);
+  font-family:var(--font-display);
+  font-size:clamp(17px, 2.7vmin, 30px);
+  letter-spacing:0.3em;
+  text-indent:0.3em;
+  cursor:pointer;
+  overflow:hidden;
+}
+#btn-next:active{ background:#1C1917; }
+/* 景品を渡す前に来場者が触って結果を消してしまう事故を防ぐ。
+   表示直後の 1.5 秒はボタンを効かせず、縁が満ちるのを待たせる */
+#btn-next:disabled{ color:#6E6759; border-color:#3A342B; cursor:default; }
+#btn-next::before{
+  content:"";
+  position:absolute;
+  left:0; bottom:0;
+  height:2px;
+  width:0;
+  background:var(--brass);
+}
+#btn-next.arming::before{ animation:arm 1500ms linear both; }
+@keyframes arm{ from{ width:0; } to{ width:100%; } }
+@media (prefers-reduced-motion: reduce){ #btn-next.arming::before{ animation:none; } }
+#btn-next span{ position:relative; z-index:1; }
+
+#btn-close{
+  min-height:clamp(50px, 7vmin, 68px);
+  padding:0 clamp(20px, 3.4vw, 40px);
+  border:1px solid rgba(201,162,75,0.42);
+  border-radius:2px;
+  background:transparent;
+  color:var(--brass);
+  font-family:var(--font-display);
+  font-size:clamp(14px, 2.2vmin, 24px);
+  letter-spacing:0.24em;
+  text-indent:0.24em;
+  cursor:pointer;
+}
+#btn-close:active{ background:rgba(201,162,75,0.10); }
+
+/* 結果を退けているあいだ */
+body.result-peek #overlay-result{ opacity:0; pointer-events:none; }
+body.result-peek #confetti-canvas{ opacity:0; }
+#btn-reopen{
+  display:none;
+  position:fixed;
+  left:50%;
+  bottom:clamp(16px, 3.4vmin, 40px);
+  transform:translateX(-50%);
+  z-index:9;
+  min-height:clamp(50px, 7vmin, 68px);
+  padding:0 clamp(22px, 3.6vw, 44px);
+  border:1px solid #9C7A2E;
+  border-radius:2px;
+  background:linear-gradient(#1C1917, #131110);
+  color:var(--brass-hi);
+  font-family:var(--font-display);
+  font-size:clamp(14px, 2.2vmin, 24px);
+  letter-spacing:0.24em;
+  text-indent:0.24em;
+  box-shadow:0 10px 26px rgba(0,0,0,0.6);
+  cursor:pointer;
+}
+body.result-peek #btn-reopen{ display:block; }
+
+/* ---------- 終了 ---------- */
+
+#overlay-finished{ background:#0B0A09; }
+#overlay-finished p{
+  margin:0;
+  font-family:var(--font-display);
+  font-size:clamp(24px, 5.6vmin, 60px);
+  line-height:1.7;
+  letter-spacing:0.2em;
+  text-indent:0.2em;
+  color:var(--brass);
+}
+
+/* ---------- 紙吹雪・閃光 ---------- */
 
 #confetti-canvas{
   position:fixed;
   inset:0;
-  /* canvas は置換要素なので inset:0 だけでは伸びず固有サイズ 300x150 のままになる。
-     幅高さを明示しないと紙吹雪が画面左上の一部にしか出ない */
+  /* canvas は置換要素。inset だけでは伸びず固有サイズ 300x150 のままになる */
   width:100%;
   height:100%;
   z-index:6;
   pointer-events:none;
+  transition:opacity 180ms ease;
 }
 
 #flash{
   position:fixed;
   inset:0;
   z-index:7;
-  background:#FFFFFF;
+  background:#F2DFAD;
   opacity:0;
   pointer-events:none;
 }
-#flash.on{
-  animation:flash-in-out 120ms ease-out;
-}
+#flash.on{ animation:flash-in-out 140ms ease-out; }
 @keyframes flash-in-out{
-  0%  { opacity:0; }
-  40% { opacity:0.85; }
-  100%{ opacity:0; }
+  0%{ opacity:0; } 30%{ opacity:0.7; } 100%{ opacity:0; }
 }
+@media (prefers-reduced-motion: reduce){ #flash.on{ animation:none; } }
 
-/* ---------- 右上ホットスポット / 設定画面 ---------- */
+/* ---------- スタッフ用 ---------- */
 
 #corner-hotspot{
   position:fixed;
-  top:0;
   right:0;
+  top:0;
   width:64px;
   height:64px;
+  z-index:8;
   background:transparent;
-  z-index:8; /* 設定画面(20)より下、他の演出要素より上 */
 }
 
-#settings-root{
-  display:none;
-  position:fixed;
-  inset:0;
-  z-index:20;
-}
-body.settings-open #settings-root{
-  display:block;
-}
-
-/* ---------- 縦横レイアウト ----------
-   横向き = 円盤左・パネル右、縦向き = 円盤上・パネル下。
-   向きが取れない古い環境向けにデフォルト(landscape相当)も用意しておく */
-
-#stage{
-  left:0;
-  top:0;
-  width:66%;
-  height:100%;
-}
-#panel{
-  left:66%;
-  top:0;
-  width:34%;
-  height:100%;
-}
-
-@media (orientation: landscape){
-  #stage{ left:0; top:0; width:66%; height:100%; }
-  #panel{ left:66%; top:0; width:34%; height:100%; }
-}
-
-@media (orientation: portrait){
-  #stage{ left:0; top:0; width:100%; height:66%; }
-  #panel{ left:0; top:66%; width:100%; height:34%; }
-}
+#settings-root{ display:none; }
+body.settings-open #settings-root{ display:block; }

@@ -7,7 +7,7 @@ window.NV = window.NV || {};
   "use strict";
 
   var TAU = Math.PI * 2;
-  var PEG_COUNT = 32;           // リング上の電球＝カチカチ音のもと。扇の枚数とは切り離す
+  var PEG_COUNT = 72;           // 縁の目盛り（5度ごと）＝カチカチ音のもと。扇の枚数とは切り離す
   var MIN_LABEL_DEG = 12;       // これより細い扇には等級名を出さない（潰れて読めないため）
   var IDLE_SPEED = 0.06;        // 待機中の自転速度 [rad/s]
   var GOLD = "#FFD97A";
@@ -272,6 +272,8 @@ window.NV = window.NV || {};
   Wheel.prototype.spinTo = function (rankId, opts) {
     opts = opts || {};
     var duration = opts.duration || 4500;
+    // suspense: 最後の失速を長く取り、止まる寸前に間を作る。1等のときだけ使う
+    var suspense = !!opts.suspense;
     var onTick = typeof opts.onTick === "function" ? opts.onTick : function () {};
     var self = this;
 
@@ -286,6 +288,7 @@ window.NV = window.NV || {};
         self._spin = {
           startTs: null,
           duration: duration,
+          suspense: suspense,
           startRotation: plan.startRotation,
           endRotation: plan.endRotation,
           onTick: onTick,
@@ -376,12 +379,14 @@ window.NV = window.NV || {};
     var t = (ts - sp.startTs) / sp.duration;
     var done = t >= 1;
     if (done) t = 1;
-    var eased = 1 - Math.pow(1 - t, 3); // easeOutCubic：単調増加でオーバーシュートしない
+    // 通常は easeOutCubic。1等は終盤をさらに寝かせて「あと少し」の間を作る。
+    // どちらも単調増加なのでオーバーシュート（行き過ぎて戻る）は起こらない。
+    var eased = sp.suspense ? (1 - Math.pow(1 - t, 5.2)) : (1 - Math.pow(1 - t, 3));
 
     var prevRotation = this.rotation;
     this.rotation = sp.startRotation + (sp.endRotation - sp.startRotation) * eased;
 
-    var speed01 = Math.pow(1 - t, 2); // easeOutCubicの速度成分。開始1→終了0
+    var speed01 = sp.suspense ? Math.pow(1 - t, 4.2) : Math.pow(1 - t, 2); // 速度成分。開始1→終了0
     var crossings = this._countCrossings(prevRotation, this.rotation);
     if (crossings > 0) {
       var calls = Math.min(crossings, 5); // 高速時に音が割れないよう1フレーム最大5回
@@ -404,62 +409,49 @@ window.NV = window.NV || {};
 
   // ---- 描画 ----
   //
-  // 「安っぽく見える」という指摘を受けての作り直し。効いているのは主に次の4つ。
-  //   1. 金属の縁：単色ではなく円周方向のグラデーションで4方向にハイライトを置く
-  //   2. 固定光源のツヤ：円盤と一緒に回さない斜め上からの光沢を最後に重ねる
-  //      （回してしまうと「塗り」に見えて立体感が出ない）
-  //   3. 電球：発光の暈をグラデーションで描き、点灯時は加算合成で光らせる
-  //   4. 当たった扇：停止後に脈打つ金色の光を載せて、どこで止まったかを一目で示す
-  // グラデーションは半径が変わったときだけ作り直す（毎フレーム生成すると重い）。
+  // 「カジノの福引盤」に見えないことを最優先にしている。
+  // やめたもの：電球、強い光沢、彩度の高い原色、太い金の枠。
+  // 代わりに入れたもの：機械加工の目盛り、旋盤跡のハブ、面取りの稜線。
+  // 精度の高い計器に見えれば、装飾を足さなくても安っぽくならない。
+
+  var BEZEL = 0.085;      // 縁の幅（半径比）
+  var TICK_DEG = 5;       // 細かい目盛りの間隔
+  var TICK_MAJOR = 30;    // 長い目盛りの間隔
 
   Wheel.prototype._cache = function (radius) {
     if (this._gc && this._gc.r === radius) return this._gc;
     var ctx = this.ctx;
     var c = { r: radius };
 
-    // 金属の縁。同じ金でも明暗を細かく振ると金属に見える。
-    // createConicGradient は Chrome 91 以降。古い端末では斜めの線形グラデで代用し、
-    // どちらも作れない環境では単色に落として「円盤が消える」ことだけは避ける。
+    // 真鍮の縁。円周方向に明暗を振ることで、平面ではなく金属の環に見せる。
+    // ハイライトは4か所ではなく2か所に絞る（多いと安いメッキに見える）。
     c.rim = null;
     try {
-      if (ctx.createConicGradient) c.rim = ctx.createConicGradient(-Math.PI / 2, 0, 0);
+      if (ctx.createConicGradient) c.rim = ctx.createConicGradient(-Math.PI * 0.75, 0, 0);
     } catch (e) { c.rim = null; }
     if (!c.rim || !c.rim.addColorStop) {
       try { c.rim = ctx.createLinearGradient(-radius, -radius, radius, radius); }
       catch (e2) { c.rim = null; }
     }
-    if (!c.rim || !c.rim.addColorStop) { c.rim = GOLD; this._gc = c; return c; }
-    var stops = [
-      [0.00, "#FFF0BE"], [0.06, "#C9982F"], [0.14, "#8A6412"], [0.22, "#E7C55F"],
-      [0.30, "#FFF6D6"], [0.38, "#B98D28"], [0.48, "#7C5A10"], [0.56, "#E0BA53"],
-      [0.64, "#FFF0BE"], [0.72, "#A87F1E"], [0.80, "#7A580F"], [0.88, "#DCB44C"],
-      [0.96, "#FFF6D6"], [1.00, "#FFF0BE"]
-    ];
-    for (var i = 0; i < stops.length; i++) c.rim.addColorStop(stops[i][0], stops[i][1]);
-    // 線形グラデで代用したときは 0〜1 が斜め方向に割り当たるが、金属感は十分出る
+    if (c.rim && c.rim.addColorStop) {
+      var stops = [
+        [0.00, "#3C2D0C"], [0.10, "#8A6B24"], [0.20, "#E4CE8E"], [0.26, "#F6E9C4"],
+        [0.34, "#B08F3A"], [0.46, "#4A380F"], [0.58, "#8A6B24"], [0.70, "#DFC684"],
+        [0.76, "#F0DFB0"], [0.84, "#9C7A2E"], [0.94, "#42320D"], [1.00, "#3C2D0C"]
+      ];
+      for (var i = 0; i < stops.length; i++) c.rim.addColorStop(stops[i][0], stops[i][1]);
+    } else {
+      c.rim = "#9C7A2E";
+    }
 
-    // 斜め上からの固定光。円盤を回しても光の位置は動かない
-    c.gloss = ctx.createLinearGradient(-radius * 0.7, -radius, radius * 0.3, radius * 0.6);
-    // 白を強くすると色が飛んで安っぽくなる。ハイライトは薄く、影は深めに。
-    c.gloss.addColorStop(0.00, "rgba(255,255,255,0.15)");
-    c.gloss.addColorStop(0.30, "rgba(255,255,255,0.05)");
-    c.gloss.addColorStop(0.52, "rgba(255,255,255,0.00)");
-    c.gloss.addColorStop(1.00, "rgba(0,0,12,0.30)");
+    // 盤面の陰り。上から柔らかく当たる程度に留める（強い光沢はプラスチックに見える）
+    c.shade = ctx.createRadialGradient(0, -radius * 0.34, radius * 0.06, 0, 0, radius);
+    c.shade.addColorStop(0.00, "rgba(255,248,232,0.10)");
+    c.shade.addColorStop(0.42, "rgba(255,248,232,0.02)");
+    c.shade.addColorStop(0.78, "rgba(0,0,0,0.16)");
+    c.shade.addColorStop(1.00, "rgba(0,0,0,0.42)");
 
-    // 盤面のふちに落ちる内側の影（奥行き）
-    c.inner = ctx.createRadialGradient(0, 0, radius * 0.62, 0, 0, radius);
-    c.inner.addColorStop(0, "rgba(0,0,0,0)");
-    c.inner.addColorStop(1, "rgba(0,0,0,0.38)");
-
-    // 中心ハブの金属
-    var hubR = radius * 0.19;
-    c.hub = ctx.createRadialGradient(-hubR * 0.35, -hubR * 0.45, hubR * 0.05, 0, 0, hubR);
-    c.hub.addColorStop(0.00, "#FFFBEA");
-    c.hub.addColorStop(0.28, "#F2D479");
-    c.hub.addColorStop(0.62, "#B98D28");
-    c.hub.addColorStop(1.00, "#6E4F0C");
-    c.hubR = hubR;
-
+    c.hubR = radius * 0.155;
     this._gc = c;
     return c;
   };
@@ -471,78 +463,69 @@ window.NV = window.NV || {};
     ctx.clearRect(0, 0, w, h);
 
     var cx = w / 2, cy = h / 2;
-    var radius = Math.min(w, h) / 2 * 0.88;   // 縁と電球のぶん内側に取る
+    var outer = Math.min(w, h) / 2 * 0.97;
+    var radius = outer * (1 - BEZEL);      // 色の付いた盤面の半径
     var cache = this._cache(radius);
     var segments = this.segments;
 
     ctx.save();
     ctx.translate(cx, cy);
 
-    // 盤の落ち影
+    // 盤の落ち影。漆の面に置かれているように
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur = radius * 0.13;
-    ctx.shadowOffsetY = radius * 0.05;
+    ctx.shadowColor = "rgba(0,0,0,0.75)";
+    ctx.shadowBlur = radius * 0.16;
+    ctx.shadowOffsetY = radius * 0.055;
     ctx.beginPath();
-    ctx.arc(0, 0, radius * 1.06, 0, TAU);
-    ctx.fillStyle = "#0A1130";
+    ctx.arc(0, 0, outer, 0, TAU);
+    ctx.fillStyle = "#0E0C0A";
     ctx.fill();
     ctx.restore();
 
-    // ---- ここから回転する層 ----
+    // ---- 回転する層 ----
     ctx.save();
     ctx.rotate(this.rotation);
     for (var i = 0; i < segments.length; i++) this._drawSegment(ctx, segments[i], radius);
     this._drawDividers(ctx, segments, radius);
     ctx.restore();
 
-    // ---- 回転しない層（光と縁）----
-    // ふちの内側の影
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, TAU);
-    ctx.fillStyle = cache.inner;
-    ctx.fill();
-
-    // 固定光源のツヤ。これが無いと「塗った円グラフ」に見える
+    // ---- 回転しない層 ----
     ctx.save();
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, TAU);
     ctx.clip();
-    ctx.fillStyle = cache.gloss;
+    ctx.fillStyle = cache.shade;
     ctx.fillRect(-radius, -radius, radius * 2, radius * 2);
     ctx.restore();
 
-    // 当たった扇を光らせる（停止後だけ）
     if (this._winSeg && !this.isSpinning) this._drawWinGlow(ctx, radius);
 
-    this._drawRing(ctx, radius, cache);
-    this._drawBulbs(ctx, radius);
+    this._drawBezel(ctx, radius, outer, cache);
 
-    // 等級名は回さない（扇ごとに上下が揃うように）
     for (var l = 0; l < segments.length; l++) {
       this._drawLabel(ctx, segments[l], radius, this.rotation);
     }
 
-    this._drawHub(ctx, radius, cache);
+    this._drawHub(ctx, cache);
     ctx.restore();
   };
 
   Wheel.prototype._drawSegment = function (ctx, seg, radius) {
     var a0 = seg.start - Math.PI / 2;
     var a1 = seg.end - Math.PI / 2;
-    var color = "#8892B0", colorDark = "#5A6484";
+    var color = "#3A342B", colorDark = "#221E19";
     if (seg.rank) {
       color = seg.rank.color || color;
       colorDark = seg.rank.colorDark || colorDark;
     }
     if (seg.soldOut) {
-      color = desaturate(color, 15, 0.75);
-      colorDark = desaturate(colorDark, 15, 0.65);
+      color = desaturate(color, 12, 0.6);
+      colorDark = desaturate(colorDark, 10, 0.5);
     }
-    // 中心を明るく、外周を深く。単調な単色塗りを避ける
-    var grad = ctx.createRadialGradient(0, 0, radius * 0.10, 0, 0, radius);
-    grad.addColorStop(0.00, lighten(color, 0.09));
-    grad.addColorStop(0.42, color);
+    // 艶消しの塗り。中心から外へ静かに落とすだけにする
+    var grad = ctx.createRadialGradient(0, 0, radius * 0.12, 0, 0, radius);
+    grad.addColorStop(0.00, color);
+    grad.addColorStop(0.72, color);
     grad.addColorStop(1.00, colorDark);
 
     ctx.beginPath();
@@ -553,35 +536,29 @@ window.NV = window.NV || {};
     ctx.fill();
   };
 
-  // 扇の境目。金の線の両脇に暗い線を添えると彫りが入って見える
+  // 扇の境目は真鍮のヘアライン1本だけ。太い線を引くと途端に玩具になる
   Wheel.prototype._drawDividers = function (ctx, segments, radius) {
     if (segments.length < 2) return;
-    var wide = Math.max(1.5, radius * 0.010);
+    ctx.lineWidth = Math.max(1, radius * 0.004);
     for (var j = 0; j < segments.length; j++) {
       var a = segments[j].start - Math.PI / 2;
-      var x = Math.cos(a) * radius, y = Math.sin(a) * radius;
-
       ctx.beginPath();
-      ctx.moveTo(0, 0); ctx.lineTo(x, y);
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
-      ctx.lineWidth = wide * 2.2;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(0, 0); ctx.lineTo(x, y);
-      ctx.strokeStyle = "#F6DE9A";
-      ctx.lineWidth = wide;
+      ctx.moveTo(Math.cos(a) * radius * 0.10, Math.sin(a) * radius * 0.10);
+      ctx.lineTo(Math.cos(a) * radius, Math.sin(a) * radius);
+      ctx.strokeStyle = "rgba(201,162,75,0.55)";
       ctx.stroke();
     }
   };
 
-  // 停止後、当たった扇だけを脈打たせる
+  // 当たった扇に灯りを入れる。色を足すのではなく明度だけを上げる
   Wheel.prototype._drawWinGlow = function (ctx, radius) {
     var seg = this._winSeg;
     if (!seg) return;
     var a0 = seg.start + this.rotation - Math.PI / 2;
     var a1 = seg.end + this.rotation - Math.PI / 2;
-    var pulse = this._reducedMotion ? 0.34 : 0.22 + 0.20 * (0.5 + 0.5 * Math.sin(Date.now() / 300));
+    var pulse = this._reducedMotion
+      ? 0.20
+      : 0.12 + 0.13 * (0.5 + 0.5 * Math.sin(Date.now() / 420));
 
     ctx.save();
     ctx.beginPath();
@@ -589,9 +566,9 @@ window.NV = window.NV || {};
     ctx.arc(0, 0, radius, a0, a1, false);
     ctx.closePath();
     ctx.globalCompositeOperation = "lighter";
-    var g = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius);
-    g.addColorStop(0, "rgba(255,240,190," + (pulse * 0.45).toFixed(3) + ")");
-    g.addColorStop(1, "rgba(255,210,110," + pulse.toFixed(3) + ")");
+    var g = ctx.createRadialGradient(0, 0, radius * 0.1, 0, 0, radius);
+    g.addColorStop(0, "rgba(255,244,214," + (pulse * 0.5).toFixed(3) + ")");
+    g.addColorStop(1, "rgba(242,223,173," + pulse.toFixed(3) + ")");
     ctx.fillStyle = g;
     ctx.fill();
     ctx.restore();
@@ -604,39 +581,31 @@ window.NV = window.NV || {};
 
     var label = String(seg.rank.label);
     var mid = (seg.start + seg.end) / 2 + rotation - Math.PI / 2;
-    var labelR = radius * 0.62;
+    var labelR = radius * 0.66;
 
-    var arcSpace = widthRad * labelR * 0.82;
-    var size = clamp(radius * 0.16, 13, 68);
-    size = Math.min(size, arcSpace / Math.max(1, label.length) * 1.35);
+    var arcSpace = widthRad * labelR * 0.8;
+    var size = clamp(radius * 0.155, 13, 72);
+    size = Math.min(size, arcSpace / Math.max(1, label.length) * 1.3);
     if (size < 13) return;
 
+    var x = Math.cos(mid) * labelR, y = Math.sin(mid) * labelR;
     ctx.save();
-    ctx.translate(Math.cos(mid) * labelR, Math.sin(mid) * labelR);
+    ctx.translate(x, y);
     ctx.font = "700 " + size.toFixed(1) + "px " + DISPLAY_FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.lineJoin = "round";
-    // 明朝は横画が細い。濃い縁取り＋わずかな影で扇の上でも溶けないようにする
-    ctx.shadowColor = "rgba(0,0,0,0.5)";
-    ctx.shadowBlur = size * 0.22;
-    ctx.shadowOffsetY = size * 0.04;
-    ctx.lineWidth = Math.max(2, size * 0.14);
-    ctx.strokeStyle = "rgba(24,18,4,0.55)";
-    ctx.strokeText(label, 0, 0);
-    ctx.shadowColor = "transparent";
-    var tg = ctx.createLinearGradient(0, -size * 0.6, 0, size * 0.6);
-    tg.addColorStop(0, "#FFFFFF");
-    tg.addColorStop(1, "#F1E4C4");
-    ctx.fillStyle = seg.soldOut ? "rgba(255,255,255,0.45)" : tg;
+    // 落とし込みの彫り。下に淡い縁、上に文字を置くと版に押したように見える
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fillText(label, 0, size * 0.045);
+    ctx.fillStyle = seg.soldOut ? "rgba(240,235,222,0.42)" : "#F7F2E6";
     ctx.fillText(label, 0, 0);
     ctx.restore();
   };
 
-  // 外周の金属リング。内外に暗い溝を入れて厚みを出す
-  Wheel.prototype._drawRing = function (ctx, radius, cache) {
-    var band = radius * 0.115;
-    var mid = radius + band * 0.5;
+  // 縁。面取りの稜線と機械加工の目盛りで「計器」に見せる
+  Wheel.prototype._drawBezel = function (ctx, radius, outer, cache) {
+    var band = outer - radius;
+    var mid = radius + band / 2;
 
     ctx.beginPath();
     ctx.arc(0, 0, mid, 0, TAU);
@@ -644,89 +613,86 @@ window.NV = window.NV || {};
     ctx.lineWidth = band;
     ctx.stroke();
 
-    ctx.beginPath();
-    ctx.arc(0, 0, radius + band * 0.04, 0, TAU);
-    ctx.strokeStyle = "rgba(40,26,0,0.55)";
-    ctx.lineWidth = Math.max(1.5, radius * 0.012);
-    ctx.stroke();
+    // 内外の稜線。細い暗線と明線を隣り合わせると角が立って見える
+    var hair = Math.max(1, radius * 0.0045);
+    ctx.lineWidth = hair;
+    ctx.beginPath(); ctx.arc(0, 0, radius + hair, 0, TAU);
+    ctx.strokeStyle = "rgba(0,0,0,0.62)"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, radius + hair * 2.4, 0, TAU);
+    ctx.strokeStyle = "rgba(255,240,205,0.28)"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, outer - hair, 0, TAU);
+    ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, outer - hair * 2.6, 0, TAU);
+    ctx.strokeStyle = "rgba(255,240,205,0.22)"; ctx.stroke();
 
-    ctx.beginPath();
-    ctx.arc(0, 0, radius + band * 0.98, 0, TAU);
-    ctx.strokeStyle = "rgba(30,20,0,0.6)";
-    ctx.lineWidth = Math.max(1.5, radius * 0.014);
-    ctx.stroke();
-  };
-
-  // リング上の電球。点灯側は加算合成で暈を出す
-  Wheel.prototype._drawBulbs = function (ctx, radius) {
-    var band = radius * 0.115;
-    var ringR = radius + band * 0.5;
-    var bulbR = band * 0.27;
-    var blink = !this._reducedMotion && (this.isSpinning || this._idle);
-
-    for (var i = 0; i < PEG_COUNT; i++) {
-      var a = (i / PEG_COUNT) * TAU - Math.PI / 2;
-      var x = Math.cos(a) * ringR, y = Math.sin(a) * ringR;
-      var even = (i % 2 === 0);
-      var lit = blink ? (even === this._blinkOn) : even;
-
-      if (lit) {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        var halo = ctx.createRadialGradient(x, y, 0, x, y, bulbR * 3.2);
-        halo.addColorStop(0, "rgba(255,244,206,0.85)");
-        halo.addColorStop(0.35, "rgba(255,214,120,0.35)");
-        halo.addColorStop(1, "rgba(255,190,60,0)");
-        ctx.fillStyle = halo;
-        ctx.beginPath();
-        ctx.arc(x, y, bulbR * 3.2, 0, TAU);
-        ctx.fill();
-        ctx.restore();
-      }
-
-      var g = ctx.createRadialGradient(x - bulbR * 0.3, y - bulbR * 0.3, bulbR * 0.1, x, y, bulbR);
-      if (lit) { g.addColorStop(0, "#FFFFFF"); g.addColorStop(0.6, "#FFF0BC"); g.addColorStop(1, "#F0C24A"); }
-      else { g.addColorStop(0, "#8A6A22"); g.addColorStop(1, "#4A3608"); }
+    // 目盛り。5度ごとに細く、30度ごとに長く。カチカチ音の根拠でもある
+    ctx.lineCap = "butt";
+    for (var deg = 0; deg < 360; deg += TICK_DEG) {
+      var major = (deg % TICK_MAJOR === 0);
+      var a = (deg / 180) * Math.PI - Math.PI / 2;
+      var len = band * (major ? 0.62 : 0.3);
+      var r0 = outer - hair * 3 - len;
+      var r1 = outer - hair * 3;
       ctx.beginPath();
-      ctx.arc(x, y, bulbR, 0, TAU);
-      ctx.fillStyle = g;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(40,26,0,0.5)";
-      ctx.lineWidth = Math.max(0.8, bulbR * 0.18);
+      ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+      ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+      ctx.strokeStyle = major ? "rgba(38,27,4,0.75)" : "rgba(48,35,8,0.45)";
+      ctx.lineWidth = major ? hair * 1.8 : hair;
       ctx.stroke();
     }
   };
 
-  Wheel.prototype._drawHub = function (ctx, radius, cache) {
-    var hubR = cache.hubR;
+  // 中心。旋盤で挽いた真鍮の面を同心円で表す
+  Wheel.prototype._drawHub = function (ctx, cache) {
+    var R = cache.hubR;
 
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.5)";
-    ctx.shadowBlur = hubR * 0.5;
-    ctx.shadowOffsetY = hubR * 0.12;
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = R * 0.6;
+    ctx.shadowOffsetY = R * 0.14;
     ctx.beginPath();
-    ctx.arc(0, 0, hubR, 0, TAU);
-    ctx.fillStyle = cache.hub;
+    ctx.arc(0, 0, R, 0, TAU);
+    var base = ctx.createLinearGradient(-R * 0.6, -R, R * 0.5, R);
+    base.addColorStop(0.00, "#F0DCA8");
+    base.addColorStop(0.30, "#C9A24B");
+    base.addColorStop(0.62, "#8A6B24");
+    base.addColorStop(1.00, "#4A380F");
+    ctx.fillStyle = base;
     ctx.fill();
     ctx.restore();
 
+    // 旋盤跡
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(0, 0, hubR * 0.78, 0, TAU);
-    var inner = ctx.createRadialGradient(0, -hubR * 0.3, hubR * 0.05, 0, 0, hubR * 0.78);
-    inner.addColorStop(0, "#22305F");
-    inner.addColorStop(1, "#0A1130");
-    ctx.fillStyle = inner;
+    ctx.arc(0, 0, R * 0.94, 0, TAU);
+    ctx.clip();
+    ctx.lineWidth = Math.max(0.6, R * 0.018);
+    for (var k = 1; k < 14; k++) {
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.94 * (k / 14), 0, TAU);
+      ctx.strokeStyle = (k % 2 === 0) ? "rgba(255,246,222,0.16)" : "rgba(60,44,10,0.20)";
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 中央の落とし込み
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.62, 0, TAU);
+    var pit = ctx.createRadialGradient(0, -R * 0.25, R * 0.05, 0, 0, R * 0.62);
+    pit.addColorStop(0, "#191512");
+    pit.addColorStop(1, "#0A0908");
+    ctx.fillStyle = pit;
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.45)";
-    ctx.lineWidth = Math.max(1, hubR * 0.05);
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.lineWidth = Math.max(1, R * 0.045);
     ctx.stroke();
 
-    var f = clamp(hubR * 0.40, 11, 30);
+    var f = clamp(R * 0.42, 10, 30);
     ctx.font = "700 " + f.toFixed(1) + "px " + DISPLAY_FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#F3D783";
-    ctx.fillText("抽選", 0, 0);
+    ctx.fillStyle = "#C9A24B";
+    ctx.fillText("抽選", 0, f * 0.03);
   };
 
   window.NV.Wheel = Wheel;

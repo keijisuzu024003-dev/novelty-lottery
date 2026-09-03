@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- 会場でのタップ操作前提。ピンチズームやダブルタップ拡大は誤操作の元なので禁止する -->
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#0B1437">
+<meta name="theme-color" content="#0B0A09">
 <link rel="manifest" href="manifest.webmanifest">
 <title>ノベルティ抽選</title>
 <link rel="stylesheet" href="app.css">
@@ -12,39 +12,61 @@
 <!-- 画面の出し分けは data-state を CSS 側で属性セレクタとして参照する。JS はここを書き換えるだけ -->
 <body data-state="boot">
 
-  <!-- 背景。放射グラデ＋回転する光条は app.css だけで完結させる -->
+  <!-- 背景。漆器の面に見立てた、ごく浅い縦のグラデーションだけ -->
   <div id="bg" aria-hidden="true"></div>
 
-  <!-- 円盤ステージ。idle / spinning / result で表示する -->
-  <div id="stage">
-    <canvas id="wheel-canvas"></canvas>
-    <!-- 12時方向固定のポインタ。onTick のたびに .bump を付け外しして弾ませる -->
-    <div id="pointer" aria-hidden="true"></div>
-    <div id="logo"><img src="logo.png" alt="アツミ電氣株式会社"></div>
-  </div>
+  <!-- 画面全体の骨格。横向きは 円盤｜情報 の二段組、縦向きは上下に積む -->
+  <div id="frame">
 
-  <!-- 操作パネル。idle / spinning のみ表示（result 以降はオーバーレイに切り替わる） -->
-  <div id="panel">
-    <div id="headline">ノベルティ抽選</div>
-    <button id="btn-start" type="button">スタート</button>
+    <!-- 円盤ステージ -->
+    <div id="stage">
+      <canvas id="wheel-canvas"></canvas>
+      <!-- 12時方向固定の指針。onTick のたびに .bump を付け外しして弾ませる -->
+      <div id="pointer" aria-hidden="true"></div>
+    </div>
+
+    <!-- 情報側。景品の紹介と操作 -->
+    <div id="panel">
+      <div id="brand">
+        <img id="logo" src="logo.png" alt="アツミ電氣株式会社">
+        <div id="eyebrow">新商品説明会 2026</div>
+      </div>
+
+      <!-- 待機中に景品を順に見せる。何がもらえるかを通りがかりに伝えるのが目的 -->
+      <div id="prize-card" aria-hidden="true">
+        <div class="plate"><img id="prize-img" alt=""></div>
+        <div class="meta">
+          <span id="prize-rank" class="rank"></span>
+          <span id="prize-name" class="name"></span>
+        </div>
+      </div>
+
+      <button id="btn-start" type="button"><span>抽選する</span></button>
+    </div>
   </div>
 
   <!-- 起動直後。Android の自動再生ポリシー対策で、最初のタップで音声を初期化する -->
   <div id="overlay-boot">
-    <p>画面をタップして開始</p>
+    <div class="boot-inner">
+      <img class="boot-logo" src="logo.png" alt="アツミ電氣株式会社">
+      <p>画面をタップして開始</p>
+    </div>
   </div>
 
   <div id="overlay-result">
-    <div id="result-rank"></div>
-    <div id="result-item"></div>
-    <div id="result-actions">
-      <button id="btn-close" type="button">円盤を見る</button>
-      <button id="btn-next" type="button">次の人へ</button>
+    <div class="result-inner">
+      <div id="result-rank"></div>
+      <div id="result-plate"><img id="result-img" alt=""></div>
+      <div id="result-item"></div>
+      <div id="result-actions">
+        <button id="btn-close" type="button">円盤を見る</button>
+        <button id="btn-next" type="button"><span>次の人へ</span></button>
+      </div>
     </div>
   </div>
 
   <div id="overlay-finished">
-    <p>本日の抽選は終了しました</p>
+    <p>本日の抽選は<br>終了しました</p>
   </div>
 
   <!-- 結果を退けているあいだだけ出る。もう一度結果に戻すためのボタン -->
@@ -53,7 +75,7 @@
   <!-- 紙吹雪専用キャンバス。最前面かつクリックを奪わないよう pointer-events:none -->
   <canvas id="confetti-canvas"></canvas>
 
-  <!-- 1等演出用の白フラッシュ -->
+  <!-- 1等演出用のフラッシュ -->
   <div id="flash" aria-hidden="true"></div>
 
   <!-- 右上の透明領域。1.5秒長押しでスタッフ用設定画面を開く（来場者には見えない） -->

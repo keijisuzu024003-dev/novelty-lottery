@@ -19,6 +19,13 @@ window.NV = window.NV || {};
     return root;
   }
 
+  // 等級名や品目名をそのまま HTML に流し込むので、記号でタグが壊れないようにする
+  function esc(v) {
+    return String(v == null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
   function toNum(v, fallback) {
     var n = Number(v);
     return isFinite(n) ? n : fallback;
@@ -28,6 +35,7 @@ window.NV = window.NV || {};
     if (typeof onSavedCb === "function") {
       try { onSavedCb(state); } catch (e) { console.warn("[NV.settings] onSaved failed:", e); }
     }
+    try { refreshBoard(); } catch (e) {}
   }
 
   // ---- 見た目（自前でスタイルを持つ。app.css には依存しない） ----------
@@ -40,39 +48,59 @@ window.NV = window.NV || {};
       "#settings-root{display:none;}" +
       "body.settings-open #settings-root{display:block;}" +
       "#settings-root, #settings-root *{box-sizing:border-box;}" +
-      ".nvs-overlay{position:fixed;inset:0;background:rgba(4,8,24,0.72);z-index:9000;" +
+      ".nvs-overlay{position:fixed;inset:0;background:rgba(6,5,4,0.82);z-index:9000;" +
         "display:flex;align-items:center;justify-content:center;padding:16px;" +
         "font-family:'Noto Sans JP','Hiragino Sans',system-ui,sans-serif;}" +
-      ".nvs-panel{background:#0B1437;color:#FFFFFF;width:min(96vw,880px);max-height:92vh;" +
-        "overflow-y:auto;border-radius:16px;border:1px solid #2A3B7A;padding:20px;}" +
-      ".nvs-pin-panel{background:#0B1437;color:#fff;border-radius:16px;border:1px solid #2A3B7A;" +
+      ".nvs-panel{background:#131110;color:#F4EFE4;width:min(96vw,880px);max-height:92vh;" +
+        "overflow-y:auto;border-radius:3px;border:1px solid #3A342B;padding:20px;}" +
+      ".nvs-pin-panel{background:#131110;color:#F4EFE4;border-radius:3px;border:1px solid #3A342B;" +
         "padding:24px;width:min(92vw,340px);text-align:center;}" +
       ".nvs-h1{font-size:20px;font-weight:700;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;}" +
-      ".nvs-h2{font-size:15px;font-weight:700;margin:20px 0 8px;color:#A8B4E0;border-bottom:1px solid #2A3B7A;padding-bottom:6px;}" +
+      ".nvs-h2{font-size:15px;font-weight:700;margin:20px 0 8px;color:#9A9081;border-bottom:1px solid #3A342B;padding-bottom:6px;}" +
       ".nvs-row{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap;}" +
-      ".nvs-label{font-size:13px;color:#A8B4E0;min-width:96px;}" +
-      ".nvs-btn{min-height:44px;padding:0 16px;border-radius:999px;border:none;font-size:14px;" +
-        "font-weight:700;cursor:pointer;background:linear-gradient(#FFD97A,#F5A623);color:#2A1A00;}" +
-      ".nvs-btn.secondary{background:#1A2A6C;color:#fff;border:1px solid #3A4B9A;}" +
-      ".nvs-btn.danger{background:#D93A3A;color:#fff;}" +
-      ".nvs-input{min-height:44px;border-radius:8px;border:1px solid #3A4B9A;background:#101B4A;" +
+      ".nvs-label{font-size:13px;color:#9A9081;min-width:96px;}" +
+      ".nvs-btn{min-height:44px;padding:0 16px;border-radius:2px;border:none;font-size:14px;" +
+        "font-weight:700;cursor:pointer;background:linear-gradient(#C9A24B,#9C7A2E);color:#0B0A09;}" +
+      ".nvs-btn.secondary{background:#1C1917;color:#fff;border:1px solid #4A4335;}" +
+      ".nvs-btn.danger{background:#9E3129;color:#fff;}" +
+      ".nvs-input{min-height:44px;border-radius:2px;border:1px solid #4A4335;background:#0E0D0B;" +
         "color:#fff;padding:0 10px;font-size:14px;}" +
       ".nvs-input.num{width:80px;}" +
       ".nvs-input.name{flex:1;min-width:120px;}" +
-      ".nvs-color{width:52px;height:44px;padding:2px;border-radius:8px;border:1px solid #3A4B9A;background:#101B4A;}" +
-      ".nvs-rank-card{border:1px solid #2A3B7A;border-radius:12px;padding:12px;margin:10px 0;background:#0F1B4D;}" +
-      ".nvs-item-row{display:flex;align-items:center;gap:8px;margin:6px 0;padding:6px;background:#101B4A;border-radius:8px;flex-wrap:wrap;}" +
-      ".nvs-muted{color:#A8B4E0;font-size:12px;}" +
+      ".nvs-color{width:52px;height:44px;padding:2px;border-radius:2px;border:1px solid #4A4335;background:#0E0D0B;}" +
+      ".nvs-rank-card{border:1px solid #3A342B;border-radius:3px;padding:12px;margin:10px 0;background:#181513;}" +
+      ".nvs-item-row{display:flex;align-items:center;gap:8px;margin:6px 0;padding:6px;background:#0E0D0B;border-radius:2px;flex-wrap:wrap;}" +
+      ".nvs-muted{color:#9A9081;font-size:12px;}" +
+      // 配布状況ボード。スクロールせずに «いまどうなっているか» だけ読めるようにする
+      ".nvs-board{margin:0 0 18px;padding:14px 16px 16px;background:#17140F;border:1px solid #3A342B;border-radius:4px;}" +
+      ".nvs-board-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px;}" +
+      ".nvs-board-venue{font-size:19px;font-weight:700;color:#FFF;letter-spacing:.06em;}" +
+      ".nvs-board-sub{font-size:12px;color:#9A9081;}" +
+      ".nvs-board-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}" +
+      ".nvs-board-cell{background:#0E0D0B;border:1px solid #3A342B;border-radius:3px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:2px;}" +
+      ".nvs-board-cell .c-label{font-size:11px;color:#9A9081;letter-spacing:.1em;}" +
+      ".nvs-board-cell .c-num{font-size:30px;font-weight:700;line-height:1.1;color:#FFF;font-variant-numeric:tabular-nums;}" +
+      ".nvs-board-cell .c-sub{font-size:11px;color:#8C8375;font-variant-numeric:tabular-nums;}" +
+      ".nvs-board-cell .c-bar{display:block;height:3px;margin-top:8px;background:#3A342B;border-radius:99px;overflow:hidden;}" +
+      ".nvs-board-cell .c-bar i{display:block;height:100%;background:#C9A24B;}" +
+      ".nvs-board-cell.low{border-color:#8A6B24;}" +
+      ".nvs-board-cell.low .c-bar i{background:#E8B33C;}" +
+      ".nvs-board-cell.low .c-num{color:#F2DFAD;}" +
+      ".nvs-board-cell.out{border-color:#6B2019;opacity:.75;}" +
+      ".nvs-board-cell.out .c-bar i{background:#9E3129;}" +
+      ".nvs-board-cell.out .c-num{color:#E39184;}" +
+      ".nvs-board-cell.total{background:#100E0C;}" +
+      ".nvs-board-cell.total .c-num{color:#F2DFAD;}" +
       ".nvs-prob{font-size:12px;color:#FFD97A;}" +
       ".nvs-keypad{display:grid;grid-template-columns:repeat(3,72px);gap:10px;justify-content:center;margin:18px 0;}" +
-      ".nvs-key{min-height:56px;font-size:22px;border-radius:12px;border:1px solid #3A4B9A;background:#101B4A;color:#fff;cursor:pointer;}" +
+      ".nvs-key{min-height:56px;font-size:22px;border-radius:3px;border:1px solid #4A4335;background:#0E0D0B;color:#fff;cursor:pointer;}" +
       ".nvs-dots{font-size:28px;letter-spacing:10px;min-height:36px;margin:8px 0;}" +
       ".nvs-error{color:#FF9C9C;font-size:13px;min-height:18px;}" +
       ".nvs-msg{font-size:13px;color:#8CF5A0;min-height:18px;}" +
       ".nvs-toggle-row{display:flex;align-items:center;gap:10px;}" +
       ".nvs-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9500;" +
         "display:flex;align-items:center;justify-content:center;padding:16px;}" +
-      ".nvs-confirm-box{background:#0B1437;border:1px solid #3A4B9A;border-radius:14px;padding:20px;" +
+      ".nvs-confirm-box{background:#131110;border:1px solid #4A4335;border-radius:14px;padding:20px;" +
         "max-width:360px;color:#fff;text-align:center;}" +
       ".nvs-confirm-box p{font-size:14px;line-height:1.6;margin:0 0 16px;white-space:pre-wrap;}" +
       ".nvs-confirm-btns{display:flex;gap:10px;justify-content:center;}";
@@ -306,6 +334,73 @@ window.NV = window.NV || {};
   // ---- 設定画面本体 ---------------------------------------------------
 
   // 音の状態を設定画面に出す。「鳴らない」が端末側かアプリ側かをその場で切り分けるため
+  // D. 配布状況。設定画面をスクロールしないと残数が分からなかったので、
+  // 先頭に「今どうなっているか」だけを大きく出す。会場での判断はここだけ見れば足りる。
+  function statusBoardHtml() {
+    return '' +
+      '<div class="nvs-board" data-role="board">' +
+        '<div class="nvs-board-head">' +
+          '<span class="nvs-board-venue" data-role="b-venue"></span>' +
+          '<span class="nvs-board-sub" data-role="b-sub"></span>' +
+        '</div>' +
+        '<div class="nvs-board-grid" data-role="b-grid"></div>' +
+      '</div>';
+  }
+
+  function refreshBoard() {
+    try {
+      var root = document.querySelector('[data-role="board"]');
+      if (!root) return;
+
+      var hist = state.history || [];
+      var venue = state.venue;
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      var t0 = today.getTime();
+
+      var todayHere = 0, firstTs = 0, lastTs = 0;
+      for (var i = 0; i < hist.length; i++) {
+        var h = hist[i];
+        if (h.venue !== venue || !(h.ts >= t0)) continue;
+        todayHere++;
+        if (!firstTs || h.ts < firstTs) firstTs = h.ts;
+        if (h.ts > lastTs) lastTs = h.ts;
+      }
+      var hours = (firstTs && lastTs > firstTs) ? (lastTs - firstTs) / 3600000 : 0;
+      var pace = hours > 0.08 ? Math.round(todayHere / hours) : null;
+
+      root.querySelector('[data-role="b-venue"]').textContent = venue;
+      root.querySelector('[data-role="b-sub"]').textContent =
+        "本日 " + todayHere + " 回" + (pace !== null ? "（およそ " + pace + " 回/時）" : "");
+
+      var grid = root.querySelector('[data-role="b-grid"]');
+      var html = "";
+      var ranks = state.ranks || [];
+      var totalLeft = 0, totalInit = 0;
+      for (var r = 0; r < ranks.length; r++) {
+        var left = NV.lottery.rankStock(ranks[r]);
+        var init = 0, items = ranks[r].items || [];
+        for (var k = 0; k < items.length; k++) init += toNum(items[k].initial, 0);
+        totalLeft += left; totalInit += init;
+        var pct = init > 0 ? Math.round(left / init * 100) : 0;
+        var low = (init > 0 && pct <= 15);
+        html += '<div class="nvs-board-cell' + (left === 0 ? " out" : (low ? " low" : "")) + '">' +
+                  '<span class="c-label">' + esc(ranks[r].label) + '</span>' +
+                  '<span class="c-num">' + left + '</span>' +
+                  '<span class="c-sub">/ ' + init + '　' + pct + '%</span>' +
+                  '<span class="c-bar"><i style="width:' + pct + '%"></i></span>' +
+                '</div>';
+      }
+      var tp = totalInit > 0 ? Math.round(totalLeft / totalInit * 100) : 0;
+      html += '<div class="nvs-board-cell total">' +
+                '<span class="c-label">合計</span>' +
+                '<span class="c-num">' + totalLeft + '</span>' +
+                '<span class="c-sub">/ ' + totalInit + '　' + tp + '%</span>' +
+                '<span class="c-bar"><i style="width:' + tp + '%"></i></span>' +
+              '</div>';
+      grid.innerHTML = html;
+    } catch (e) { /* 表示だけの機能なので失敗しても設定画面は開いたままにする */ }
+  }
+
   function showSoundState() {
     try {
       var el = document.querySelector('[data-role="sound-state"]');
@@ -342,6 +437,7 @@ window.NV = window.NV || {};
           '</div>' +
           '<div class="nvs-msg" id="nvs-msg"></div>' +
 
+          statusBoardHtml() +
           '<div class="nvs-h2">会場</div>' +
           '<div class="nvs-row">' +
             '<select class="nvs-input" data-action="set-venue">' + venueOptions + '</select>' +
@@ -409,6 +505,7 @@ window.NV = window.NV || {};
     r.querySelector('[data-action="set-auto"]').value = toNum(state.settings && state.settings.autoAdvanceSec, 0);
     r.querySelector('[data-action="set-itempick"]').value = (state.settings && state.settings.itemPick === "even") ? "even" : "stock-weighted";
 
+    refreshBoard();
     showSoundState();
 
     var ranksWrap = r.querySelector('[data-role="ranks"]');

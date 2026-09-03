@@ -41,7 +41,11 @@ window.NV = window.NV || {};
     var initialNum = toNum(raw.initial);
     var initial = isFinite(initialNum) ? Math.max(0, Math.floor(initialNum)) : stock;
 
-    return { id: id, name: name, stock: stock, initial: initial };
+    // 景品のイラスト。会場データJSONに data URI で入ってくる。
+    // 公開リポジトリに景品を出さないため、画像はアプリ本体ではなく会場データ側に持たせている。
+    var out = { id: id, name: name, stock: stock, initial: initial };
+    if (typeof raw.image === "string" && raw.image) { out.image = raw.image; }
+    return out;
   }
 
   function sanitizeRank(raw, idx, defRank) {

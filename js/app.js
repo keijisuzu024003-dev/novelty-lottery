@@ -34,6 +34,12 @@ window.NV = window.NV || {};
     el.resultRank = document.getElementById('result-rank');
     el.resultItem = document.getElementById('result-item');
     el.btnClose = document.getElementById('btn-close');
+    el.prizeCard = document.getElementById('prize-card');
+    el.prizeImg = document.getElementById('prize-img');
+    el.prizeRank = document.getElementById('prize-rank');
+    el.prizeName = document.getElementById('prize-name');
+    el.resultPlate = document.getElementById('result-plate');
+    el.resultImg = document.getElementById('result-img');
     el.btnReopen = document.getElementById('btn-reopen');
     el.pointer = document.getElementById('pointer');
     el.cornerHotspot = document.getElementById('corner-hotspot');
@@ -49,6 +55,9 @@ window.NV = window.NV || {};
     if (el.btnStart) {
       el.btnStart.disabled = (name === 'spinning');
     }
+    // 待機中だけ景品を順に見せる。回転中や結果表示中に裏で切り替わると気が散る
+    if (name === 'idle') { startPrizeRotation(); }
+    else { stopPrizeRotation(); }
   }
 
   function clearAutoAdvance(){
@@ -160,9 +169,12 @@ window.NV = window.NV || {};
     try { NV.sound.rollStart(); } catch (e) {}
 
     var spinPromise;
+    // C. 1等のときだけ、回転を長く取り終盤を寝かせる。止まる寸前の「間」を作る
+    var isTop = !!(state.ranks && state.ranks[0] && state.ranks[0].id === result.rankId);
     try {
       spinPromise = wheel.spinTo(result.rankId, {
-        duration: SPIN_DURATION_MS,
+        suspense: isTop,
+        duration: isTop ? Math.round(SPIN_DURATION_MS * 1.55) : SPIN_DURATION_MS,
         onTick: function(speed01){
           try { NV.sound.tick(speed01); } catch (e) {}
           bumpPointer();
@@ -223,6 +235,17 @@ window.NV = window.NV || {};
 
     setPeek(false);
     if (el.resultRank) { el.resultRank.textContent = result.rankLabel; }
+    // B. 何が当たったのかを絵で見せる。文字だけだと現物が想像できない
+    if (el.resultPlate && el.resultImg) {
+      var img = imageFor(result.itemId);
+      if (img) {
+        el.resultImg.src = img;
+        el.resultPlate.classList.remove('hidden');
+      } else {
+        el.resultImg.removeAttribute('src');
+        el.resultPlate.classList.add('hidden');
+      }
+    }
     if (el.resultItem) {
       el.resultItem.textContent = result.itemName;
       // 品目名は20文字前後になることがある。
@@ -231,6 +254,7 @@ window.NV = window.NV || {};
       var n = (result.itemName || '').length;
       el.resultItem.className = n > 22 ? 'len-l' : (n > 12 ? 'len-m' : '');
     }
+    armNext();
     setState('result');
 
     var rankIndex = findRankIndex(result.rankId);
@@ -293,6 +317,67 @@ window.NV = window.NV || {};
 
   // 結果表示を一時的にどけているかどうか。円盤の停止位置を見せるためだけの状態で、
   // 抽選の進行（data-state）には影響させない。
+  // ---- A. 待機中に景品を順に見せる ----
+  // 通りがかりの人に「何がもらえるか」を伝えるのが目的。在庫が切れた品目は出さない。
+  var prizeTimer = null;
+  var prizeIndex = 0;
+
+  function prizeList(){
+    var out = [];
+    var ranks = (state && state.ranks) || [];
+    for (var i = 0; i < ranks.length; i++) {
+      var items = ranks[i].items || [];
+      for (var j = 0; j < items.length; j++) {
+        if (Number(items[j].stock) > 0) {
+          out.push({ rank: ranks[i].label, name: items[j].name, image: items[j].image });
+        }
+      }
+    }
+    return out;
+  }
+
+  function showPrize(){
+    if (!el.prizeCard) { return; }
+    var list = prizeList();
+    if (!list.length) { el.prizeCard.style.display = 'none'; return; }
+    el.prizeCard.style.display = '';
+    var p = list[prizeIndex % list.length];
+    prizeIndex++;
+
+    // 一旦フェードアウトしてから差し替える。パッと切り替わると散らかって見える
+    el.prizeCard.classList.add('swap');
+    setTimeout(function(){
+      if (el.prizeRank) { el.prizeRank.textContent = p.rank; }
+      if (el.prizeName) { el.prizeName.textContent = p.name; }
+      if (el.prizeImg) {
+        if (p.image) { el.prizeImg.src = p.image; el.prizeImg.style.display = ''; }
+        else { el.prizeImg.removeAttribute('src'); el.prizeImg.style.display = 'none'; }
+      }
+      el.prizeCard.classList.remove('swap');
+    }, 420);
+  }
+
+  function startPrizeRotation(){
+    stopPrizeRotation();
+    showPrize();
+    prizeTimer = setInterval(showPrize, 4200);
+  }
+  function stopPrizeRotation(){
+    if (prizeTimer) { clearInterval(prizeTimer); prizeTimer = null; }
+  }
+
+  // 品目IDから画像を引く（結果表示用）
+  function imageFor(itemId){
+    var ranks = (state && state.ranks) || [];
+    for (var i = 0; i < ranks.length; i++) {
+      var items = ranks[i].items || [];
+      for (var j = 0; j < items.length; j++) {
+        if (items[j].id === itemId) { return items[j].image || null; }
+      }
+    }
+    return null;
+  }
+
   // AudioContext はタブの復帰やブラウザの都合で suspended に落ちることがある。
   // 何か触られるたびに resume を投げておけば、次の抽選までに勝手に直る。
   function nudgeAudio(){
@@ -306,7 +391,25 @@ window.NV = window.NV || {};
     try { NV.sound.ui(); } catch (e) {}
   }
 
+  // E. 景品を渡す前に来場者が画面を触って結果を消してしまう事故を防ぐ。
+  // 表示から armMs の間はタップも「次の人へ」も効かせない。
+  var ARM_MS = 1500;
+  var armedAt = 0;
+  function armNext(){
+    armedAt = Date.now() + ARM_MS;
+    if (!el.btnNext) { return; }
+    el.btnNext.disabled = true;
+    el.btnNext.classList.remove('arming');
+    void el.btnNext.offsetWidth;   // アニメーションを毎回頭から流すため
+    el.btnNext.classList.add('arming');
+    setTimeout(function(){
+      if (el.btnNext) { el.btnNext.disabled = false; el.btnNext.classList.remove('arming'); }
+    }, ARM_MS);
+  }
+  function nextArmed(){ return Date.now() >= armedAt; }
+
   function nextPerson(){
+    if (!nextArmed()) { return; }
     setPeek(false);
     if (el.body.dataset.state !== 'result') { return; }
     clearAutoAdvance();
