@@ -183,6 +183,15 @@ body[data-state="result"] #stage{ transform:scale(1.035); }
   z-index:3;
 }
 #pointer.bump{ animation:pointer-bump 90ms ease-out; }
+/* 終盤のラチェット1歩ぶん。ゆっくり大きく弾かせて «1つ越えた» を見せる */
+#pointer.bump-hard{ animation:pointer-bump-hard 200ms cubic-bezier(.2,.85,.3,1); }
+@keyframes pointer-bump-hard{
+  0%  { transform:translateX(-50%) rotate(0deg); }
+  22% { transform:translateX(-50%) rotate(16deg); }
+  60% { transform:translateX(-50%) rotate(-4deg); }
+  100%{ transform:translateX(-50%) rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce){ #pointer.bump-hard{ animation:none; } }
 /* 停止の一撃で大きく跳ねる。回転中の bump（9度・90ms）とは別扱い */
 #pointer.kick{ animation:pointer-kick 380ms cubic-bezier(.2,.8,.3,1) both; }
 @keyframes pointer-kick{

@@ -113,14 +113,134 @@ window.NV = window.NV || {};
   }
 
   // ---- セグメント生成 ----
-  // 等級ごとに扇を1枚だけ置き、幅（面積）＝出現確率にする。
-  // 以前は1等級を複数枚に割って交互配置していたが、扇ごとに文字の向きが
-  // 上下バラバラに見えるという指摘があったため1枚にまとめた。文字は回転させず
-  // 常に水平に描くので、向きは常に揃う（_drawLabel を参照）。
+  //
+  // 等級を «複数の扇» に割って円周に散らす。面積の合計は確率どおりのまま。
+  //
+  //   3等 62% を1枚（223°）で置くと、盤の6割が同じ色になり
+  //   回す前から「まあ3等だろう」が伝わってしまう。
+  //   5枚（各45°）に割って1等・2等を間に挟むと、面積は1ミリも変えずに
+  //   «1等の扇が円周上に2か所ある» 盤になる。1周ごとに1等の近くを通る回数が増え、
+  //   終盤のラチェットで «次の扇に入るか» の瀬戸際が生まれる。
+  //
+  // 一時期1枚にまとめていたのは «等級名の向きが上下でバラバラ» という理由だけで、
+  // 今は文字を盤と一緒に回さず常に水平に描いている（_drawLabel）。割っても向きは揃う。
   //
   // 在庫0の等級は円盤から外して残りで正規化する。外さないと
   // 「絶対に止まらない大きな扇」が残り、見ている人に不自然に映るため。
   // 例外を投げない：ranks が空 / weight が全部0以下でも必ず何か返す。
+
+  var TARGET_PIECES = 10;   // 円周に置きたい扇の枚数の目安
+  var MIN_PIECE_DEG = 13;   // これより細くは割らない（MIN_LABEL_DEG を割ると等級名が消える）
+  var MAX_PIECES = 14;      // 枚数の上限。増やしすぎると1枚が細くなり等級名が読めない
+
+  // 正規化した重みから、等級ごとの分割数を決める
+  function splitCounts(norm) {
+    var n = norm.length;
+    var counts = [];
+    var cap = [];          // 幅の下限から決まる、その等級を割れる上限
+    var total = 0;
+    var i;
+    for (i = 0; i < n; i++) {
+      cap.push(Math.max(1, Math.floor((norm[i] * 360) / MIN_PIECE_DEG)));
+      var want = Math.max(1, Math.round(norm[i] * TARGET_PIECES));
+      // 幅が許すなら最低2枚。1枚のままだと «円周に散らす» 意味が無くなる。
+      // 割りたいのはむしろ 1等 のような少数派で、そこが1枚だと near-miss が増えない
+      var c = Math.min(cap[i], Math.max(2, want));
+      counts.push(c);
+      total += c;
+    }
+    // 円環で同じ色を隣り合わせないためには、最多の等級が全体の半分以下である必要がある。
+    // 崩れているときは、まず «他を増やす»。多数派を削ると1枚あたりが太くなってしまう
+    for (var guard = 0; guard < 60; guard++) {
+      var mi = 0;
+      for (i = 1; i < n; i++) { if (counts[i] > counts[mi]) mi = i; }
+      if (counts[mi] * 2 <= total) break;
+
+      var raised = -1;
+      for (i = 0; i < n; i++) {
+        if (i === mi) continue;
+        if (counts[i] >= cap[i] || counts[i] >= counts[mi]) continue;
+        if (raised < 0 || counts[i] < counts[raised]) raised = i;
+      }
+      if (raised >= 0 && total < MAX_PIECES) {
+        counts[raised] += 1;
+        total += 1;
+      } else if (counts[mi] > 1) {
+        counts[mi] -= 1;
+        total -= 1;
+      } else {
+        break;   // 等級が1つしかない等。隣接は interleave 側で許容する
+      }
+    }
+    return counts;
+  }
+
+  // 同じ等級が隣り合わないように並べる。円環なので先頭と末尾も見る。
+  //
+  // «1つ飛ばしで敷き詰める» のが基本。最多が全体の半分以下なら必ず成立する。
+  // ただし «等級ごとにまとめて» 敷き詰めると、1等の2枚が円周の一角に固まる。
+  // 1枚ずつ持ち回りで敷き詰めると散るが、枚数が拮抗していると隣接が出ることがある。
+  // そこで両方作り、散る方を優先しつつ、成立している方を採る。
+  function interleave(counts) {
+    var n = counts.length;
+    var total = 0, i;
+    for (i = 0; i < n; i++) total += counts[i];
+    if (total <= 0) return [];
+
+    var idx = [];
+    for (i = 0; i < n; i++) { if (counts[i] > 0) idx.push(i); }
+    idx.sort(function (a, b) { return counts[b] - counts[a]; });
+    if (idx.length <= 1) {
+      var solo = [];
+      for (i = 0; i < total; i++) solo.push(idx.length ? idx[0] : 0);
+      return solo;
+    }
+
+    // 1つ飛ばしに敷き詰める（偶数番地を埋め切ったら奇数番地へ）
+    function lay(seq) {
+      var order = new Array(total);
+      var pos = 0;
+      for (var k = 0; k < seq.length; k++) {
+        order[pos] = seq[k];
+        pos += 2;
+        if (pos >= total) pos = 1;
+      }
+      for (var j = 0; j < total; j++) { if (order[j] == null) order[j] = seq[0]; }
+      return order;
+    }
+    function ok(order) {
+      for (var j = 0; j < order.length; j++) {
+        if (order[j] === order[(j + 1) % order.length]) return false;
+      }
+      return true;
+    }
+
+    var head = idx[0];
+    var left, k2, q;
+
+    // A案：最多を先に、残りは «1枚ずつ持ち回り»。1等が散る
+    left = counts.slice();
+    var spread = [];
+    for (k2 = 0; k2 < counts[head]; k2++) spread.push(head);
+    left[head] = 0;
+    for (var guard = 0; guard < 1000; guard++) {
+      var placed = false;
+      for (q = 1; q < idx.length; q++) {
+        if (left[idx[q]] > 0) { spread.push(idx[q]); left[idx[q]]--; placed = true; }
+      }
+      if (!placed) break;
+    }
+    var a = lay(spread);
+    if (ok(a)) return a;
+
+    // B案：等級ごとにまとめて敷き詰める。散らないが、最多が半分以下なら必ず成立する
+    var grouped = [];
+    for (q = 0; q < idx.length; q++) {
+      for (k2 = 0; k2 < counts[idx[q]]; k2++) grouped.push(idx[q]);
+    }
+    return lay(grouped);
+  }
+
   function buildSegments(ranks) {
     var list = [];
     try {
@@ -159,15 +279,22 @@ window.NV = window.NV || {};
       totalW = live.length;
     }
 
+    var norm = weights.map(function (w) { return w / totalW; });
+    var counts = splitCounts(norm);
+    var order = interleave(counts);
+    // 1枚あたりの角度。counts で割っているので、等級ごとの «合計» は確率どおりのまま
+    var per = norm.map(function (w, i) { return (w * TAU) / counts[i]; });
+
     var segments = [];
     var cursor = 0;
-    for (var k = 0; k < live.length; k++) {
-      var rad = (weights[k] / totalW) * TAU;
+    for (var k = 0; k < order.length; k++) {
+      var ri = order[k];
+      var rad = per[ri];
       // 端数の積み残しで最後に隙間が出ないよう、最後の1枚は残り全部にする
-      if (k === live.length - 1) rad = TAU - cursor;
+      if (k === order.length - 1) rad = TAU - cursor;
       segments.push({
-        rankId: live[k].id,
-        rank: live[k],
+        rankId: live[ri].id,
+        rank: live[ri],
         soldOut: soldOutAll,
         start: cursor,
         end: cursor + rad
@@ -249,7 +376,12 @@ window.NV = window.NV || {};
     var seg = matches[Math.floor(Math.random() * matches.length)];
     var width = seg.end - seg.start;
     var center = (seg.start + seg.end) / 2;
-    var target = center + (Math.random() * 2 - 1) * 0.35 * width;
+    // 扇の中心から散らして止めるが、境界に寄せすぎない。
+    // 指針には太さがあるので、余白が 4.5 度を切ると «どちらの扇に入ったのか» が
+    // 見た目で判断できなくなる（扇を割って 18 度の扇ができたので効いてくる）
+    var edgeRad = (4.5 / 180) * Math.PI;
+    var spread = Math.min(0.35, Math.max(0, (width / 2 - edgeRad) / width));
+    var target = center + (Math.random() * 2 - 1) * spread * width;
 
     var curMod = ((this.rotation % TAU) + TAU) % TAU;
     var targetMod = (((TAU - target) % TAU) + TAU) % TAU;
@@ -272,10 +404,44 @@ window.NV = window.NV || {};
     return Math.floor(currRotation / step) - Math.floor(prevRotation / step);
   };
 
+  // ---- 終盤のラチェット ----
+  //
+  // 滑らかに減速して止まると「気づいたら止まっていた」になる。
+  // 最後の数目盛りを1つずつ、溜めを伸ばしながら越えることで
+  // 「次の扇に入るか、入らないか」の瀬戸際を見せる。
+  //
+  // 手前の n-1 歩は目盛り（PEG_COUNT 等分）の上でぴたりと止め、
+  // 最後の1歩だけが本当の停止位置。最後の1歩は 0〜1目盛りぶんの端数なので、
+  // ほんの少し動いて止まることもあれば、丸々1目盛り動くこともある。この揺らぎが効く。
+  var RATCHET_TAIL_MS = 140;   // 最後のカチから炸裂までの «無音の一拍»
+
+  function buildRatchet(endRotation, count, suspense) {
+    // 1歩は目盛り1つぶん（5度）ちょうど。目盛りの絶対位置に揃える必要は無い
+    // ——目盛りは音の密度を決めるためだけの存在で、盤には描いていない。
+    // 揃えようとすると最後の1歩が端数になり、動きが見えないまま終わる。
+    var step = TAU / PEG_COUNT;
+    var start = endRotation - count * step;
+    var stops = [];
+    var acc = 0;
+    for (var i = 0; i < count; i++) {
+      var last = (i === count - 1);
+      var p = (i + 1) / count;
+      // 動きは緩やかに伸ばし、溜めは二乗で伸ばす。«溜めの伸び» が緊張の正体。
+      // ただし最後の溜めだけは短くする。ここを伸ばすと «最終クリック → 炸裂» が間延びする
+      var moveMs = 95 + (suspense ? 95 : 85) * p;
+      var holdMs = last
+        ? RATCHET_TAIL_MS
+        : (suspense ? 25 : 20) + (suspense ? 480 : 300) * p * p;
+      stops.push({ rot: start + (i + 1) * step, at: acc, dur: moveMs, fired: false });
+      acc += moveMs + holdMs;
+    }
+    return { start: start, stops: stops, total: acc };
+  }
+
   Wheel.prototype.spinTo = function (rankId, opts) {
     opts = opts || {};
     var duration = opts.duration || 4500;
-    // suspense: 最後の失速を長く取り、止まる寸前に間を作る。1等のときだけ使う
+    // suspense: ラチェットの歩数と溜めを増やして «あと少し» を長く取る。1等のときだけ使う
     var suspense = !!opts.suspense;
     var onTick = typeof opts.onTick === "function" ? opts.onTick : function () {};
     var self = this;
@@ -284,6 +450,12 @@ window.NV = window.NV || {};
       try {
         var plan = self._planSpin(rankId);
         if (!plan) { resolve(); return; } // 空盤：演出せず終了
+
+        var ratCount = suspense ? 8 : 5;
+        var rat = buildRatchet(plan.endRotation, ratCount, suspense);
+        // duration は «全体» の時間。ラチェットに使う分を引いた残りが滑走時間。
+        // 滑走が短すぎると回った気がしないので、最低でも全体の 45% は残す
+        var glideMs = Math.max(duration * 0.45, duration - rat.total);
 
         self._idle = false; // spinTo中はidleを無効化
         self._winSeg = null; // 前回の当たりの光を消す
@@ -298,6 +470,15 @@ window.NV = window.NV || {};
           suspense: suspense,
           startRotation: plan.startRotation,
           endRotation: plan.endRotation,
+          glideMs: glideMs,
+          glideDist: rat.start - plan.startRotation,
+          // 滑走の終端速度をラチェット1歩目に合わせるための線形成分。
+          // 0 だと滑走が完全に止まってからラチェットが動き出し、繋ぎ目が見える
+          w: clamp(
+                ((TAU / PEG_COUNT) / (rat.stops[0].dur / 1000)) * (glideMs / 1000)
+                  / Math.max(1e-6, rat.start - plan.startRotation),
+                0.01, 0.3),
+          rat: rat,
           onTick: onTick,
           resolve: resolve
         };
@@ -393,28 +574,64 @@ window.NV = window.NV || {};
     var sp = this._spin;
     if (!sp) { this.isSpinning = false; return; }
     if (sp.startTs == null) sp.startTs = ts;
-    var t = (ts - sp.startTs) / sp.duration;
-    var done = t >= 1;
-    if (done) t = 1;
-    // 通常は easeOutCubic。1等は終盤をさらに寝かせて「あと少し」の間を作る。
-    // どちらも単調増加なのでオーバーシュート（行き過ぎて戻る）は起こらない。
-    var eased = sp.suspense ? (1 - Math.pow(1 - t, 5.2)) : (1 - Math.pow(1 - t, 3));
 
+    var elapsed = ts - sp.startTs;
     var prevRotation = this.rotation;
-    this.rotation = sp.startRotation + (sp.endRotation - sp.startRotation) * eased;
-    this._dRot = this.rotation - prevRotation;  // このフレームで進んだ角度＝残像の幅
+    var fired = [];
+    var tickSpeed = 0;
+    var done = false;
 
-    var speed01 = sp.suspense ? Math.pow(1 - t, 4.2) : Math.pow(1 - t, 2); // 速度成分。開始1→終了0
-    this._speed01 = clamp(speed01, 0, 1);
-    var crossings = this._countCrossings(prevRotation, this.rotation);
-    if (crossings > 0) {
-      var calls = Math.min(crossings, 5); // 高速時に音が割れないよう1フレーム最大5回
-      for (var i = 0; i < calls; i++) {
-        try { sp.onTick(speed01); } catch (e) { /* onTick側の例外で抽選演出を止めない */ }
+    if (elapsed < sp.glideMs) {
+      // ---- 第1相：滑走 ----
+      // 素の easeOutCubic は t=1 で速度が 0 になる。そのまま繋ぐと
+      // 「一度止まってから、また動き出す」ように見えるので、
+      // 終端の速度がラチェット1歩目の速度と揃うよう、線形成分を w だけ混ぜる。
+      var t = elapsed / sp.glideMs;
+      var eased = (1 - Math.pow(1 - t, 3)) * (1 - sp.w) + t * sp.w;
+      this.rotation = sp.startRotation + (sp.glideDist * eased);
+      tickSpeed = Math.pow(1 - t, 2);
+      var crossings = this._countCrossings(prevRotation, this.rotation);
+      if (crossings > 0) {
+        var calls = Math.min(crossings, 5); // 高速時に音が割れないよう1フレーム最大5回
+        for (var i = 0; i < calls; i++) fired.push(tickSpeed);
       }
+    } else {
+      // ---- 第2相：ラチェット ----
+      // カチは «1歩を動き終えた瞬間» に1回だけ鳴らす。目盛りの通過数から数えると
+      // 浮動小数の丸めで鳴り漏れ・二度鳴りが出るので、ここでは数えない。
+      var e = elapsed - sp.glideMs;
+      var stops = sp.rat.stops;
+      var from = sp.rat.start;
+      var pos = from;
+      for (var j = 0; j < stops.length; j++) {
+        var s = stops[j];
+        if (e >= s.at + s.dur) {
+          from = s.rot;
+          pos = s.rot;
+          if (!s.fired) { s.fired = true; fired.push(0.02); }
+          continue;
+        }
+        if (e >= s.at) {
+          var u = (e - s.at) / s.dur;
+          pos = from + (s.rot - from) * (1 - Math.pow(1 - u, 2.4));
+        } else {
+          pos = from;   // 溜めの最中。動かさない
+        }
+        break;
+      }
+      this.rotation = pos;
+      tickSpeed = 0.02;
+      done = e >= sp.rat.total;
     }
 
-    try { this.render(); } catch (e) { /* 描画失敗は無視して継続 */ }
+    this._dRot = this.rotation - prevRotation;  // このフレームで進んだ角度＝残像の幅
+    this._speed01 = clamp(Math.abs(this._dRot) / 0.55, 0, 1);
+
+    for (var f = 0; f < fired.length; f++) {
+      try { sp.onTick(fired[f]); } catch (e2) { /* onTick側の例外で抽選演出を止めない */ }
+    }
+
+    try { this.render(); } catch (e3) { /* 描画失敗は無視して継続 */ }
 
     if (done) {
       this.rotation = sp.endRotation; // 誤差を消して確実にターゲットへ止める
@@ -425,7 +642,7 @@ window.NV = window.NV || {};
       this._speed01 = 0;
       this._flareT = Date.now();      // ここから FLARE_MS かけて炸裂が収まる
       this._ensureLoop();             // 炸裂を描くためにループを起こし直す
-      try { this.render(); } catch (e) {}
+      try { this.render(); } catch (e4) {}
       sp.resolve();
     }
   };
@@ -502,12 +719,17 @@ window.NV = window.NV || {};
     // 等級名。高速時は消す。読めないうえ、残っていると残像を濁らせる
     var labelAlpha = 1 - Math.min(1, speed * 1.7);
     if (labelAlpha > 0.03) {
-      ctx.save();
-      ctx.globalAlpha = labelAlpha;
-      for (var l = 0; l < segments.length; l++) {
-        this._drawLabel(ctx, segments[l], radius, this.rotation);
+      // 大きさは «いちばん細い扇に収まる寸法» に全体を揃える。
+      // 扇ごとに変えると、同じ «1等 / 2等 / 3等» が大小まちまちになって散らかる
+      var size = this._labelSize(segments, radius);
+      if (size > 0) {
+        ctx.save();
+        ctx.globalAlpha = labelAlpha;
+        for (var l = 0; l < segments.length; l++) {
+          this._drawLabel(ctx, segments[l], radius, this.rotation, size);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
 
     this._drawHub(ctx, cache);
@@ -675,7 +897,24 @@ window.NV = window.NV || {};
     ctx.restore();
   };
 
-  Wheel.prototype._drawLabel = function (ctx, seg, radius, rotation) {
+  // 全ての扇に共通の文字サイズ。いちばん細い扇に合わせる
+  Wheel.prototype._labelSize = function (segments, radius) {
+    var size = clamp(radius * 0.165, 13, 78);
+    var found = false;
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      if (!seg.rank || !seg.rank.label) continue;
+      var widthRad = seg.end - seg.start;
+      if ((widthRad / TAU) * 360 < MIN_LABEL_DEG) continue;   // ここは元から描かない
+      var arcSpace = widthRad * radius * 0.66 * 0.8;
+      var fit = arcSpace / Math.max(1, String(seg.rank.label).length) * 1.3;
+      if (fit < size) size = fit;
+      found = true;
+    }
+    return (found && size >= 13) ? size : 0;
+  };
+
+  Wheel.prototype._drawLabel = function (ctx, seg, radius, rotation, size) {
     if (!seg.rank || !seg.rank.label) return;
     var widthRad = seg.end - seg.start;
     if ((widthRad / TAU) * 360 < MIN_LABEL_DEG) return;
@@ -683,11 +922,7 @@ window.NV = window.NV || {};
     var label = String(seg.rank.label);
     var mid = (seg.start + seg.end) / 2 + rotation - Math.PI / 2;
     var labelR = radius * 0.66;
-
-    var arcSpace = widthRad * labelR * 0.8;
-    var size = clamp(radius * 0.165, 13, 78);
-    size = Math.min(size, arcSpace / Math.max(1, label.length) * 1.3);
-    if (size < 13) return;
+    if (!(size > 0)) return;
 
     ctx.save();
     ctx.translate(Math.cos(mid) * labelR, Math.sin(mid) * labelR);
@@ -718,6 +953,9 @@ window.NV = window.NV || {};
 
   // 検証用の内部関数の限定公開（ブラウザ実行には影響しない。Node等でのテスト専用）
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { buildSegments: buildSegments, desaturate: desaturate };
+    module.exports = {
+      buildSegments: buildSegments, desaturate: desaturate,
+      splitCounts: splitCounts, interleave: interleave
+    };
   }
 })();

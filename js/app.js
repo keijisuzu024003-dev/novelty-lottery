@@ -186,7 +186,8 @@ window.NV = window.NV || {};
         duration: isTop ? Math.round(SPIN_DURATION_MS * 1.55) : SPIN_DURATION_MS,
         onTick: function(speed01){
           try { NV.sound.tick(speed01); } catch (e) {}
-          bumpPointer();
+          // 終盤のラチェットは1歩が «越えた» と分かる強さで弾かせる
+          bumpPointer(speed01 < 0.08);
         }
       });
     } catch (e) {
@@ -304,12 +305,12 @@ window.NV = window.NV || {};
     return 2; // 見つからない場合は最も控えめな演出（3等相当）に倒す
   }
 
-  function bumpPointer(){
+  function bumpPointer(hard){
     if (!el.pointer) { return; }
     // 連続する tick でも毎回アニメーションが再生されるよう、一旦クラスを外して reflow を挟む
-    el.pointer.classList.remove('bump');
+    el.pointer.classList.remove('bump', 'bump-hard');
     void el.pointer.offsetWidth;
-    el.pointer.classList.add('bump');
+    el.pointer.classList.add(hard ? 'bump-hard' : 'bump');
   }
 
   // 等級ごとの閃光。--peak / --fade を書き換えてから再生する
@@ -337,7 +338,7 @@ window.NV = window.NV || {};
     void el.body.offsetWidth;
     el.body.classList.add('impact');
     if (el.pointer) {
-      el.pointer.classList.remove('bump', 'kick');
+      el.pointer.classList.remove('bump', 'bump-hard', 'kick');
       void el.pointer.offsetWidth;
       el.pointer.classList.add('kick');
     }
