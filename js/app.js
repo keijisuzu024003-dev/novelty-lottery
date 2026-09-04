@@ -24,6 +24,11 @@ window.NV = window.NV || {};
   // 0 にすると炸裂も衝撃波も幕の裏に隠れて、演出が丸ごと無駄になる
   var RESULT_DELAY_MS = 520;
   var resultRevealTimer = null;
+  // 1等だけ、止まってから «何も起こらない» 時間を挟む。
+  // 音も画も完全に止め、上昇音だけを鳴らしてから炸裂させる。
+  // これが «えっ……» の一拍になる。0 にすると当たりがただ «起きる» だけになる
+  var FREEZE_MS = 340;
+  var freezeTimer = null;
 
   var el = {};
 
@@ -141,6 +146,9 @@ window.NV = window.NV || {};
   function goIdleOrFinished(){
     isBusy = false;
     clearResultReveal();
+    clearFreeze();
+    el.body.classList.remove('tensing', 'freeze');
+    resetTension();  // CSS のトランジションでゆっくり引く
     // 在庫0になった等級を円盤から外す。停止直後にやると setRanks が
     // 当たりの扇の参照を捨ててしまい、光も炸裂も途中で消える
     try { wheel.setRanks(state.ranks); } catch (e) {}
@@ -172,7 +180,11 @@ window.NV = window.NV || {};
 
     isBusy = true;
     clearAutoAdvance();
+    clearFreeze();
     setState('spinning');
+    // 回転中は毎フレーム JS が値を書くので、CSS のトランジションを切っておく
+    el.body.classList.add('tensing');
+    resetTension();
 
     try { NV.sound.whoosh(); } catch (e) {}
     try { NV.sound.rollStart(); } catch (e) {}
@@ -184,11 +196,24 @@ window.NV = window.NV || {};
       spinPromise = wheel.spinTo(result.rankId, {
         suspense: isTop,
         duration: isTop ? Math.round(SPIN_DURATION_MS * 1.55) : SPIN_DURATION_MS,
-        onTick: function(speed01){
-          try { NV.sound.tick(speed01); } catch (e) {}
-          // 終盤のラチェットは1歩が «越えた» と分かる強さで弾かせる
-          bumpPointer(speed01 < 0.08);
-        }
+        // 1等は止まっても炸裂させない。FREEZE_MS 置いてから burst() で起こす
+        holdFlare: isTop,
+        onTick: function(speed01, step){
+          if (step) {
+            // ラチェットの1歩。ドラムロールは止まっているので、この音だけが鳴る
+            try { NV.sound.ratchetTick(step.i, step.n); } catch (e) {}
+            bumpPointer(true);
+          } else {
+            try { NV.sound.tick(speed01); } catch (e) {}
+            bumpPointer(false);
+          }
+        },
+        // ラチェットに入ったらドラムロールを切る。
+        // 最後の数クリックが «無音の中» に落ちることで、続く一撃の落差が最大になる
+        onRatchet: function(){
+          try { NV.sound.rollStop(); } catch (e) {}
+        },
+        onFrame: feedTension
       });
     } catch (e) {
       console.warn('[NV.app] spinTo に失敗。演出なしで結果へ進みます', e);
@@ -223,11 +248,9 @@ window.NV = window.NV || {};
   }
 
   function onSpinDone(result){
+    // ラチェットで既に止めているが、見張りタイマー経由で来たときのための保険
     try { NV.sound.rollStop(); } catch (e) {}
     var rank0 = findRankIndex(result.rankId);
-    // 一撃は commit や DOM 更新より先に鳴らす。ここで数ミリ遅れると «ズレた» と感じる
-    try { NV.sound.impact(rank0 === 0 ? 1 : (rank0 === 1 ? 0.8 : 0.62)); } catch (e) {}
-    impactShake();
 
     var committed = false;
     try {
@@ -247,20 +270,85 @@ window.NV = window.NV || {};
 
     try { NV.storage.save(state); } catch (e) {}
 
-    // --- 第1拍：円盤の上で炸裂させる。ここで幕を降ろすと全部隠れて何も見えない ---
+    if (rank0 === 0) {
+      // --- 1等だけ：ここで «時間を止める» ---
+      // 盤は止まったまま、当たりの扇も光らせない。上昇音だけが鳴り、盤へゆっくり寄る。
+      // 何も起きない 340ms があるから、次の一撃が «爆発» になる
+      el.body.classList.remove('tensing');
+      el.body.classList.add('freeze');
+      setZoom(zoom + 0.05);
+      try { NV.sound.riser(FREEZE_MS); } catch (e) {}
+      clearFreeze();
+      freezeTimer = setTimeout(function(){
+        freezeTimer = null;
+        fireBurst(result, rank0);
+      }, FREEZE_MS);
+      return;
+    }
+    fireBurst(result, rank0);
+  }
+
+  // 炸裂。1等はこの手前に FREEZE_MS の «無» が入る
+  function fireBurst(result, rank0){
+    el.body.classList.remove('freeze', 'tensing');
+    // 炸裂で «引く»。寄り続けたカメラが弾かれる感じを作る（700ms かけて戻る）
+    setZoom(1.055);
+    // 一撃は画より先に。ここで数ミリ遅れると «ズレた» と感じる
+    try { NV.sound.impact(rank0 === 0 ? 1 : (rank0 === 1 ? 0.8 : 0.62)); } catch (e) {}
+    impactShake();
+    try { wheel.burst(); } catch (e) {}                 // 保留していた炸裂（1等のみ）
     flashOnce(rank0);                                   // 閃光は3等にも。差は強さで付ける
     try { NV.confetti.burst(rank0 + 1); } catch (e) {}
     try { NV.sound.fanfare(rank0); } catch (e) {}
     if (rank0 === 0) { try { NV.sound.applause(2); } catch (e) {} }
     try { wheel.keepGlowing(); } catch (e) {}           // 当たりの扇を脈打たせ続ける
 
-    // --- 第2拍：一拍おいてから結果を叩きつける ---
-    // ここを 0 にすると «止まった瞬間に答えが出る» だけになり、間が消える。
+    // 一拍おいてから結果を叩きつける。
+    // ここを 0 にすると «止まった瞬間に答えが出る» だけになり、間が消える
     clearResultReveal();
     resultRevealTimer = setTimeout(function(){
       resultRevealTimer = null;
       showResult(result);
     }, RESULT_DELAY_MS);
+  }
+
+  function clearFreeze(){
+    if (freezeTimer) { clearTimeout(freezeTimer); freezeTimer = null; }
+  }
+
+  // ---- ⑤ 減速に合わせて盤へ寄り、周囲を沈める ----
+  // t=0（回り始め）→ t=1（止まる寸前）。回転中は毎フレーム、それ以外は CSS が補間する
+  var zoom = 1;
+  var tension = 0;
+  var tensionArmed = false;
+
+  function setZoom(v){
+    zoom = v;
+    if (el.stage) { el.stage.style.setProperty('--zoom', v.toFixed(4)); }
+  }
+  function setTension(t){
+    var v = t < 0 ? 0 : (t > 1 ? 1 : t);
+    if (el.body) { el.body.style.setProperty('--vig', v.toFixed(3)); }
+    setZoom(1.02 + 0.08 * v);
+  }
+  function resetTension(){
+    tension = 0;
+    tensionArmed = false;
+    setTension(0);
+  }
+  // 円盤から毎フレーム呼ばれる。速度が落ちるほど寄る。
+  //  ・回り始めの1〜2フレームはまだ速度が計算されておらず 0 になる。
+  //    そのまま 1-speed を使うと «いきなり最大まで寄って、すぐ引く» という揺り戻しが出る。
+  //    速度が一度上がりきるまでは 0 に張り付かせ、その後は単調増加にする
+  function feedTension(speed01){
+    if (!tensionArmed) {
+      if (speed01 > 0.5) { tensionArmed = true; }
+      setTension(0);
+      return;
+    }
+    var t = 1 - speed01;
+    if (t > tension) { tension = t; }
+    setTension(tension);
   }
 
   // 結果の幕。onSpinDone から RESULT_DELAY_MS 遅れて呼ばれる
@@ -467,7 +555,7 @@ window.NV = window.NV || {};
   function nextArmed(){ return Date.now() >= armedAt; }
 
   function nextPerson(){
-    if (resultRevealTimer) { return; }  // 炸裂を見せている最中。まだ結果すら出ていない
+    if (resultRevealTimer || freezeTimer) { return; }  // 炸裂の最中。まだ結果すら出ていない
     if (!nextArmed()) { return; }
     setPeek(false);
     if (el.body.dataset.state !== 'result') { return; }

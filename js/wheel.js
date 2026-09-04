@@ -324,6 +324,9 @@ window.NV = window.NV || {};
     this._speed01 = 0;     // 0〜1 の体感速度。残像・光量・ラベルの濃さを全部これで決める
     this._dRot = 0;        // 直近1フレームの回転量[rad]。モーションブラーの幅そのもの
     this._flareT = null;   // 停止時の炸裂の開始時刻。null なら炸裂していない
+    this._pendingWin = null; // 炸裂を保留している当たりの扇（1等の «時間が止まる» 間）
+    this._omega = 0;       // 角速度 [rad/s]。フレームレートに依存しない «速さ» の指標
+    this._dt = 1 / 60;     // 直近のフレーム間隔[s]。90Hz 端末で残像が薄くならないように
     this._reducedMotion = false;
     try {
       this._reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -334,6 +337,7 @@ window.NV = window.NV || {};
 
   Wheel.prototype.setRanks = function (ranks) {
     this._winSeg = null; // 扇を作り直すので前回の当たりの参照は捨てる
+    this._pendingWin = null;
     try {
       this.segments = buildSegments(ranks);
     } catch (e) {
@@ -444,6 +448,12 @@ window.NV = window.NV || {};
     // suspense: ラチェットの歩数と溜めを増やして «あと少し» を長く取る。1等のときだけ使う
     var suspense = !!opts.suspense;
     var onTick = typeof opts.onTick === "function" ? opts.onTick : function () {};
+    // ラチェットに入った瞬間（＝ドラムロールを止めるタイミング）
+    var onRatchet = typeof opts.onRatchet === "function" ? opts.onRatchet : function () {};
+    // 毎フレームの速度。画面の寄りとビネットに使う
+    var onFrame = typeof opts.onFrame === "function" ? opts.onFrame : function () {};
+    // 炸裂を保留する（1等：止まってから «間» を置いて外から burst() で起こす）
+    var holdFlare = !!opts.holdFlare;
     var self = this;
 
     return new Promise(function (resolve) {
@@ -460,6 +470,7 @@ window.NV = window.NV || {};
         self._idle = false; // spinTo中はidleを無効化
         self._winSeg = null; // 前回の当たりの光を消す
         self._flareT = null; // 前回の炸裂も消す（残っていると回り始めに白く光る）
+        self._pendingWin = null;
         self.isSpinning = true;
         self._spin = {
           startTs: null,
@@ -479,7 +490,11 @@ window.NV = window.NV || {};
                   / Math.max(1e-6, rat.start - plan.startRotation),
                 0.01, 0.3),
           rat: rat,
+          holdFlare: holdFlare,
+          ratchetFired: false,
           onTick: onTick,
+          onRatchet: onRatchet,
+          onFrame: onFrame,
           resolve: resolve
         };
         self._ensureLoop();
@@ -490,6 +505,17 @@ window.NV = window.NV || {};
         resolve();
       }
     });
+  };
+
+  // 保留していた炸裂を起こす（1等の «時間が止まる» 明け）。
+  // 保留していなければ何もしない＝通常の等級で二重に呼ばれても安全。
+  Wheel.prototype.burst = function () {
+    if (!this._pendingWin) return false;
+    this._winSeg = this._pendingWin;
+    this._pendingWin = null;
+    this._flareT = Date.now();
+    this._ensureLoop();
+    return true;
   };
 
   // 停止後の「当たりの光」を animate するためにループを起こす
@@ -515,6 +541,9 @@ window.NV = window.NV || {};
     if (this._lastTs == null) this._lastTs = ts;
     var dt = Math.min(0.1, (ts - this._lastTs) / 1000);
     this._lastTs = ts;
+    // 90Hz 端末（Redmi Pad 2）では1フレームの進み幅が 60Hz の 2/3 になる。
+    // 残像や速度をフレーム単位で測ると端末ごとに見え方が変わるので、秒あたりに直す
+    this._dt = dt > 0 ? dt : (1 / 60);
 
     if (!this._reducedMotion) {
       this._blinkAcc += dt;
@@ -530,6 +559,7 @@ window.NV = window.NV || {};
       // 回していないフレームでは速度も残像もゼロに戻す（消し忘れると滲んだまま止まる）
       this._dRot = 0;
       this._speed01 = 0;
+      this._omega = 0;
       if (this._idle) {
         this.rotation += IDLE_SPEED * dt;
         try { this.render(); } catch (e) { /* 描画失敗は無視して継続 */ }
@@ -556,13 +586,18 @@ window.NV = window.NV || {};
     var sp = this._spin;
     if (!sp) { this.isSpinning = false; return false; }
     this.rotation = sp.endRotation;
-    this._winSeg = sp.segment;
     this.isSpinning = false;
     this._spin = null;
     this._dRot = 0;
     this._speed01 = 0;
-    // 非常口から抜けた場合も炸裂は出す（rAF が死んでいれば描かれないだけ）
-    this._flareT = Date.now();
+    this._omega = 0;
+    if (sp.holdFlare) {
+      this._pendingWin = sp.segment;   // burst() 待ち。app.js が必ず呼ぶ
+    } else {
+      this._winSeg = sp.segment;
+      // 非常口から抜けた場合も炸裂は出す（rAF が死んでいれば描かれないだけ）
+      this._flareT = Date.now();
+    }
     if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
     this._lastTs = null;
     try { this.render(); } catch (e) {}
@@ -581,6 +616,12 @@ window.NV = window.NV || {};
     var tickSpeed = 0;
     var done = false;
 
+    // ラチェットに入った瞬間を1度だけ知らせる。ここでドラムロールを止めて無音にする
+    if (!sp.ratchetFired && elapsed >= sp.glideMs) {
+      sp.ratchetFired = true;
+      try { sp.onRatchet(); } catch (e0) { /* 外側の例外で演出を止めない */ }
+    }
+
     if (elapsed < sp.glideMs) {
       // ---- 第1相：滑走 ----
       // 素の easeOutCubic は t=1 で速度が 0 になる。そのまま繋ぐと
@@ -593,7 +634,7 @@ window.NV = window.NV || {};
       var crossings = this._countCrossings(prevRotation, this.rotation);
       if (crossings > 0) {
         var calls = Math.min(crossings, 5); // 高速時に音が割れないよう1フレーム最大5回
-        for (var i = 0; i < calls; i++) fired.push(tickSpeed);
+        for (var i = 0; i < calls; i++) fired.push({ speed: tickSpeed, i: -1, n: 0 });
       }
     } else {
       // ---- 第2相：ラチェット ----
@@ -608,7 +649,7 @@ window.NV = window.NV || {};
         if (e >= s.at + s.dur) {
           from = s.rot;
           pos = s.rot;
-          if (!s.fired) { s.fired = true; fired.push(0.02); }
+          if (!s.fired) { s.fired = true; fired.push({ speed: 0.02, i: j, n: stops.length }); }
           continue;
         }
         if (e >= s.at) {
@@ -624,24 +665,36 @@ window.NV = window.NV || {};
       done = e >= sp.rat.total;
     }
 
-    this._dRot = this.rotation - prevRotation;  // このフレームで進んだ角度＝残像の幅
-    this._speed01 = clamp(Math.abs(this._dRot) / 0.55, 0, 1);
+    this._dRot = this.rotation - prevRotation;
+    // 角速度。フレーム数ではなく秒で測る（90Hz 端末でも同じ見え方にするため）
+    this._omega = Math.abs(this._dRot) / Math.max(1e-4, this._dt);
+    this._speed01 = clamp(this._omega / PEAK_OMEGA, 0, 1);
 
     for (var f = 0; f < fired.length; f++) {
-      try { sp.onTick(fired[f]); } catch (e2) { /* onTick側の例外で抽選演出を止めない */ }
+      try {
+        sp.onTick(fired[f].speed, fired[f].i >= 0 ? fired[f] : null);
+      } catch (e2) { /* onTick側の例外で抽選演出を止めない */ }
     }
+    try { sp.onFrame(this._speed01); } catch (e5) {}
 
     try { this.render(); } catch (e3) { /* 描画失敗は無視して継続 */ }
 
     if (done) {
       this.rotation = sp.endRotation; // 誤差を消して確実にターゲットへ止める
       this.isSpinning = false;
-      this._winSeg = sp.segment;      // 停止後に光らせる扇
       this._spin = null;
       this._dRot = 0;
       this._speed01 = 0;
-      this._flareT = Date.now();      // ここから FLARE_MS かけて炸裂が収まる
-      this._ensureLoop();             // 炸裂を描くためにループを起こし直す
+      this._omega = 0;
+      if (sp.holdFlare) {
+        // 1等：ここでは何も起こさない。盤は止まったまま «固まる»。
+        // 当たりの扇も光らせない（光らせると答えが先に出てしまう）
+        this._pendingWin = sp.segment;
+      } else {
+        this._winSeg = sp.segment;    // 停止後に光らせる扇
+        this._flareT = Date.now();    // ここから FLARE_MS かけて炸裂が収まる
+        this._ensureLoop();           // 炸裂を描くためにループを起こし直す
+      }
       try { this.render(); } catch (e4) {}
       sp.resolve();
     }
@@ -665,6 +718,9 @@ window.NV = window.NV || {};
   // 目一杯に描くと、光が canvas の四角い縁で切れて «四角い明るい箱» になる。
   // app.css の #pointer / #shock がこの数字に依存しているので、変えるなら両方直すこと。
   var STAGE_FILL = 0.84;
+  // 回転のピーク角速度の目安[rad/s]。_speed01 はこれで正規化する。
+  // フレーム数ではなく秒で測るので、60Hz でも 90Hz（Redmi Pad 2）でも同じ見え方になる
+  var PEAK_OMEGA = 33;
 
   Wheel.prototype._cache = function (radius) {
     if (this._gc && this._gc.r === radius) return this._gc;
@@ -695,15 +751,17 @@ window.NV = window.NV || {};
     // ---- 回転する層 ----
     // 1フレームぶんの回転量を後ろへ何枚か重ねる＝本物のモーションブラー。
     // 「速く回っている絵」を描くのではなく、実際に速いから滲む。
-    var blur = this._reducedMotion ? 0 : Math.min(Math.abs(this._dRot || 0), 0.62);
-    var ghosts = blur > 0.02 ? Math.min(11, Math.round(blur * 34)) : 0;
+    // 残像の幅は «60Hz 1フレームぶんに相当する角度»。実フレームレートで割り戻すことで、
+    // 90Hz 端末でも 60Hz 端末でも同じだけ滲む
+    var blur = this._reducedMotion ? 0 : Math.min((this._omega || 0) / 60, 0.62);
+    var ghosts = blur > 0.02 ? Math.min(9, Math.round(blur * 18)) : 0;
     // 古い残像から順に半透明で重ね、最後の «現在位置» も透かして置く。
     // ここを不透明にすると盤面全体を覆ってしまい、残像が1枚も見えなくなる。
     for (var g = ghosts; g >= 1; g--) {
       ctx.save();
       ctx.globalAlpha = 0.30;
       ctx.rotate(this.rotation - blur * (g / ghosts));
-      this._drawFace(ctx, segments, radius);
+      this._drawFace(ctx, segments, radius, true);   // 残像に境界線は要らない（負荷も半減する）
       ctx.restore();
     }
     ctx.save();
@@ -713,6 +771,11 @@ window.NV = window.NV || {};
     ctx.restore();
 
     // ---- 回転しない層 ----
+    // 停止しても、炸裂を保留している間（1等のフリーズ）は灯りを保つ。
+    // ここで消すと «止まった瞬間に暗転して、340ms 後に爆発» になり、故障に見える
+    if (this.isSpinning || this._pendingWin) {
+      this._drawPointerFocus(ctx, radius, this.isSpinning ? speed : 0);
+    }
     if (this._winSeg && !this.isSpinning) this._drawWinGlow(ctx, radius);
     this._drawRing(ctx, radius, outer, speed);
 
@@ -738,8 +801,9 @@ window.NV = window.NV || {};
     ctx.restore();
   };
 
-  // 盤面。ベタ塗りの扇と、境目の細い暗線だけ
-  Wheel.prototype._drawFace = function (ctx, segments, radius) {
+  // 盤面。ベタ塗りの扇と、境目の細い暗線だけ。
+  // ghost=true のときは境界線を省く（残像では見えないうえ、線が枚数ぶん増えて重い）
+  Wheel.prototype._drawFace = function (ctx, segments, radius, ghost) {
     var i;
     for (i = 0; i < segments.length; i++) {
       var seg = segments[i];
@@ -752,7 +816,7 @@ window.NV = window.NV || {};
       ctx.fillStyle = color;
       ctx.fill();
     }
-    if (segments.length < 2) return;
+    if (ghost || segments.length < 2) return;
     ctx.lineWidth = Math.max(1, radius * 0.006);
     ctx.strokeStyle = "rgba(9,8,7,0.55)";
     for (i = 0; i < segments.length; i++) {
@@ -802,6 +866,37 @@ window.NV = window.NV || {};
     ctx.beginPath();
     ctx.arc(0, 0, r1, 0, TAU);
     ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+  };
+
+  // 減速してきたら、いま指針の下にある扇を光らせる。
+  //
+  // 「どこを通っているか」が見えると、1等の扇を通り過ぎるたびに来場者が反応する。
+  // 確率はいじっていない。単に現在位置を表示しているだけ。
+  // 速いうちは出さない（点滅にしか見えず、残像も濁る）。
+  Wheel.prototype._drawPointerFocus = function (ctx, radius, speed) {
+    if (this._reducedMotion) return;
+    var t = 1 - Math.min(1, speed / 0.30);   // 0.30 を切ってから効き始める
+    if (t <= 0.02) return;
+
+    var a = ((-this.rotation % TAU) + TAU) % TAU;   // 12時の指針が指している盤上の角度
+    var seg = null;
+    for (var i = 0; i < this.segments.length; i++) {
+      var s = this.segments[i];
+      if (a >= s.start && a < s.end) { seg = s; break; }
+    }
+    if (!seg) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, radius,
+      seg.start + this.rotation - Math.PI / 2,
+      seg.end + this.rotation - Math.PI / 2, false);
+    ctx.closePath();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = "rgba(255,246,222," + (0.20 * t * t).toFixed(3) + ")";
     ctx.fill();
     ctx.restore();
   };

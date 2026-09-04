@@ -88,17 +88,17 @@ button{
     radial-gradient(120% 90% at 50% -18%, #24201B 0%, rgba(36,32,27,0) 62%),
     linear-gradient(#0F0D0C 0%, #0B0A09 55%, #070605 100%);
 }
-/* 回転中だけ周囲を沈めて盤へ視線を集める。止まると 600ms かけて戻る */
+/* 周囲を沈めて盤へ視線を集める。濃さは --vig（app.js が減速に合わせて書く）。
+   回転中は毎フレーム書き換わるので、そのあいだだけトランジションを切る */
 #bg::before{
   content:"";
   position:absolute;
   inset:0;
-  background:radial-gradient(58% 52% at 50% 50%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.80) 100%);
-  opacity:0;
+  background:radial-gradient(58% 52% at 50% 50%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.86) 100%);
+  opacity:var(--vig, 0);
   transition:opacity 600ms ease;
 }
-body[data-state="spinning"] #bg::before,
-body[data-state="result"] #bg::before{ opacity:1; }
+body.tensing #bg::before{ transition:none; }
 
 /* 粒状のノイズ。均一なグラデーションはCG然として見えるので、わずかに荒らす */
 #bg::after{
@@ -149,16 +149,17 @@ body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
   height:var(--wheel);
   display:grid;
   place-items:center;
-  /* 回すとわずかに «寄る»。派手な演出ではなく、始まったことを体で分からせるため */
-  transform:scale(1);
+  /* 減速するほど盤へ «寄る»。倍率は --zoom（app.js が毎フレーム書く）。
+     カメラが近づいていくので、止まる瞬間には盤が画面を占める */
+  --zoom:1;
+  transform:scale(var(--zoom));
   transition:transform 700ms cubic-bezier(.2,.7,.3,1);
 }
-body[data-state="spinning"] #stage,
-body[data-state="result"] #stage{ transform:scale(1.035); }
+body.tensing #stage{ transition:none; }
+/* 1等の «時間が止まる» 340ms。ここだけはゆっくり押し込む */
+body.freeze #stage{ transition:transform 340ms cubic-bezier(.35,0,.65,1); }
 @media (prefers-reduced-motion: reduce){
-  #stage{ transition:none; }
-  body[data-state="spinning"] #stage,
-  body[data-state="result"] #stage{ transform:none; }
+  #stage{ transition:none; transform:none; }
 }
 
 #wheel-canvas{

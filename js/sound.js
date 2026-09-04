@@ -430,6 +430,99 @@ window.NV = window.NV || {};
     } catch (e) {}
   }
 
+  // ---- ratchetTick / riser: 終盤の «溜め» を作る音 --------------------
+
+  // 終盤のラチェット1歩ぶんのカチ。
+  // ここではドラムロールを止めて無音にしてあるので、この音だけが鳴る。
+  // 1歩ごとに2半音ずつ上げると «階段を上がって、次で終わる» ことが耳で分かる。
+  function ratchetTick(i, n) {
+    try {
+      if (unusable()) return;
+      var step = (typeof i === "number" && isFinite(i)) ? Math.max(0, i) : 0;
+      var last = (typeof n === "number" && step >= n - 1);
+      var t = now();
+      var freq = 620 * Math.pow(2, (step * 2) / 12);   // 2半音ずつ上げる
+
+      // 芯：短い矩形波。輪郭を作る
+      var osc = ctx.createOscillator();
+      var g = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.86, t + 0.05);
+      var peak = last ? 0.34 : 0.26;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (last ? 0.16 : 0.09));
+      osc.connect(g);
+      g.connect(master);
+      osc.start(t);
+      osc.stop(t + 0.2);
+      cleanupOnEnded(osc, [g]);
+
+      // 胴：1オクターブ下の三角波を薄く重ねる。無音の中だと矩形波だけでは細い
+      var body = ctx.createOscillator();
+      var bg = ctx.createGain();
+      body.type = "triangle";
+      body.frequency.setValueAtTime(freq / 2, t);
+      bg.gain.setValueAtTime(0.0001, t);
+      bg.gain.exponentialRampToValueAtTime(0.14, t + 0.006);
+      bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+      body.connect(bg);
+      bg.connect(master);
+      body.start(t);
+      body.stop(t + 0.2);
+      cleanupOnEnded(body, [bg]);
+    } catch (e) {}
+  }
+
+  // 1等の «時間が止まる» 間に鳴らす上昇音。
+  // 無音のまま止めると事故に見えるので、何かが来ることだけを伝える。
+  // 終端で切れる（フェードアウトしない）ので、次に来る一撃が際立つ。
+  function riser(ms) {
+    try {
+      if (unusable()) return;
+      var sec = Math.max(0.15, Math.min(1.2, (ms || 340) / 1000));
+      var t = now();
+
+      // ノイズをバンドパスで上へ舐める
+      var len = Math.max(1, Math.floor(ctx.sampleRate * (sec + 0.05)));
+      var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      var bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 3;
+      bp.frequency.setValueAtTime(320, t);
+      bp.frequency.exponentialRampToValueAtTime(5200, t + sec);
+      var ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(0.30, t + sec * 0.92);
+      ng.gain.setValueAtTime(0.30, t + sec);
+      ng.gain.linearRampToValueAtTime(0.0001, t + sec + 0.02);  // 切る
+      src.connect(bp); bp.connect(ng); ng.connect(master);
+      src.start(t);
+      src.stop(t + sec + 0.05);
+      cleanupOnEnded(src, [bp, ng]);
+
+      // 芯になる正弦波も一緒に上げる
+      var osc = ctx.createOscillator();
+      var og = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(180, t);
+      osc.frequency.exponentialRampToValueAtTime(760, t + sec);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(0.16, t + sec * 0.9);
+      og.gain.setValueAtTime(0.16, t + sec);
+      og.gain.linearRampToValueAtTime(0.0001, t + sec + 0.02);
+      osc.connect(og); og.connect(master);
+      osc.start(t);
+      osc.stop(t + sec + 0.05);
+      cleanupOnEnded(osc, [og]);
+    } catch (e) {}
+  }
+
   // ---- ui ---------------------------------------------------------------
 
   function ui() {
@@ -475,6 +568,8 @@ window.NV = window.NV || {};
     setEnabled: setEnabled,
     tick: tick,
     impact: impact,
+    ratchetTick: ratchetTick,
+    riser: riser,
     whoosh: whoosh,
     rollStart: rollStart,
     rollStop: rollStop,
