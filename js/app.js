@@ -20,6 +20,10 @@ window.NV = window.NV || {};
 
   var LONG_PRESS_MS = 1500;
   var SPIN_DURATION_MS = 4500;
+  // 止まってから結果の幕を降ろすまでの «間»。
+  // 0 にすると炸裂も衝撃波も幕の裏に隠れて、演出が丸ごと無駄になる
+  var RESULT_DELAY_MS = 520;
+  var resultRevealTimer = null;
 
   var el = {};
 
@@ -136,6 +140,10 @@ window.NV = window.NV || {};
 
   function goIdleOrFinished(){
     isBusy = false;
+    clearResultReveal();
+    // 在庫0になった等級を円盤から外す。停止直後にやると setRanks が
+    // 当たりの扇の参照を捨ててしまい、光も炸裂も途中で消える
+    try { wheel.setRanks(state.ranks); } catch (e) {}
     var finished = false;
     try { finished = NV.lottery.isFinished(state); } catch (e) {}
     setState(finished ? 'finished' : 'idle');
@@ -166,6 +174,7 @@ window.NV = window.NV || {};
     clearAutoAdvance();
     setState('spinning');
 
+    try { NV.sound.whoosh(); } catch (e) {}
     try { NV.sound.rollStart(); } catch (e) {}
 
     var spinPromise;
@@ -214,6 +223,10 @@ window.NV = window.NV || {};
 
   function onSpinDone(result){
     try { NV.sound.rollStop(); } catch (e) {}
+    var rank0 = findRankIndex(result.rankId);
+    // 一撃は commit や DOM 更新より先に鳴らす。ここで数ミリ遅れると «ズレた» と感じる
+    try { NV.sound.impact(rank0 === 0 ? 1 : (rank0 === 1 ? 0.8 : 0.62)); } catch (e) {}
+    impactShake();
 
     var committed = false;
     try {
@@ -233,6 +246,24 @@ window.NV = window.NV || {};
 
     try { NV.storage.save(state); } catch (e) {}
 
+    // --- 第1拍：円盤の上で炸裂させる。ここで幕を降ろすと全部隠れて何も見えない ---
+    flashOnce(rank0);                                   // 閃光は3等にも。差は強さで付ける
+    try { NV.confetti.burst(rank0 + 1); } catch (e) {}
+    try { NV.sound.fanfare(rank0); } catch (e) {}
+    if (rank0 === 0) { try { NV.sound.applause(2); } catch (e) {} }
+    try { wheel.keepGlowing(); } catch (e) {}           // 当たりの扇を脈打たせ続ける
+
+    // --- 第2拍：一拍おいてから結果を叩きつける ---
+    // ここを 0 にすると «止まった瞬間に答えが出る» だけになり、間が消える。
+    clearResultReveal();
+    resultRevealTimer = setTimeout(function(){
+      resultRevealTimer = null;
+      showResult(result);
+    }, RESULT_DELAY_MS);
+  }
+
+  // 結果の幕。onSpinDone から RESULT_DELAY_MS 遅れて呼ばれる
+  function showResult(result){
     setPeek(false);
     if (el.resultRank) { el.resultRank.textContent = result.rankLabel; }
     // B. 何が当たったのかを絵で見せる。文字だけだと現物が想像できない
@@ -256,23 +287,12 @@ window.NV = window.NV || {};
     }
     armNext();
     setState('result');
-
-    var rankIndex = findRankIndex(result.rankId);
-
-    try { NV.sound.fanfare(rankIndex); } catch (e) {}
-    try { NV.confetti.burst(rankIndex + 1); } catch (e) {}
-
-    if (rankIndex === 0) {
-      flashOnce();
-      try { NV.sound.applause(2); } catch (e) {}
-    }
-
-    // 在庫0になった等級があれば円盤の見た目（彩度落とし）を更新する
-    try { wheel.setRanks(state.ranks); } catch (e) {}
-    // 当たった扇の光を脈打たせるために描画ループを起こす
-    try { wheel.keepGlowing(); } catch (e) {}
-
+    slamRank();
     scheduleAutoAdvance();
+  }
+
+  function clearResultReveal(){
+    if (resultRevealTimer) { clearTimeout(resultRevealTimer); resultRevealTimer = null; }
   }
 
   function findRankIndex(rankId){
@@ -292,11 +312,48 @@ window.NV = window.NV || {};
     el.pointer.classList.add('bump');
   }
 
-  function flashOnce(){
+  // 等級ごとの閃光。--peak / --fade を書き換えてから再生する
+  var FLASH = [
+    { peak: '0.60', fade: '320ms' },  // 1等
+    { peak: '0.38', fade: '250ms' },  // 2等
+    { peak: '0.22', fade: '190ms' }   // 3等
+  ];
+  function flashOnce(rankIndex){
     if (!el.flash) { return; }
+    var f = FLASH[rankIndex] || FLASH[2];
+    el.flash.style.setProperty('--peak', f.peak);
+    el.flash.style.setProperty('--fade', f.fade);
     el.flash.classList.remove('on');
     void el.flash.offsetWidth;
     el.flash.classList.add('on');
+  }
+
+  // 画面ごと揺らす。円盤の中だけで完結させると «画面の中の出来事» に留まる
+  var shakeTimer = null;
+  function impactShake(){
+    if (!el.body) { return; }
+    if (shakeTimer) { clearTimeout(shakeTimer); }
+    el.body.classList.remove('impact');
+    void el.body.offsetWidth;
+    el.body.classList.add('impact');
+    if (el.pointer) {
+      el.pointer.classList.remove('bump', 'kick');
+      void el.pointer.offsetWidth;
+      el.pointer.classList.add('kick');
+    }
+    shakeTimer = setTimeout(function(){
+      shakeTimer = null;
+      el.body.classList.remove('impact');
+      if (el.pointer) { el.pointer.classList.remove('kick'); }
+    }, 520);
+  }
+
+  // 等級名を奥から叩きつける。display:none からの復帰でも確実に頭から流す
+  function slamRank(){
+    if (!el.resultRank) { return; }
+    el.resultRank.classList.remove('slam');
+    void el.resultRank.offsetWidth;
+    el.resultRank.classList.add('slam');
   }
 
   function scheduleAutoAdvance(){
@@ -409,6 +466,7 @@ window.NV = window.NV || {};
   function nextArmed(){ return Date.now() >= armedAt; }
 
   function nextPerson(){
+    if (resultRevealTimer) { return; }  // 炸裂を見せている最中。まだ結果すら出ていない
     if (!nextArmed()) { return; }
     setPeek(false);
     if (el.body.dataset.state !== 'result') { return; }
@@ -432,9 +490,8 @@ window.NV = window.NV || {};
   function onSettingsSaved(nextState){
     if (nextState) { state = nextState; }
     try { NV.storage.save(state); } catch (e) {}
-    try { wheel.setRanks(state.ranks); } catch (e) {}
     try { NV.sound.setEnabled(!!(state.settings && state.settings.soundOn)); } catch (e) {}
-    goIdleOrFinished();
+    goIdleOrFinished();  // 円盤の作り直しはこの中でやる
   }
 
   function bindCornerHotspot(){

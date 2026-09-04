@@ -21,6 +21,8 @@
     <!-- 円盤ステージ -->
     <div id="stage">
       <canvas id="wheel-canvas"></canvas>
+      <!-- 停止時の衝撃波。canvas の外まで広がるので DOM 側に置く（body.impact で走る） -->
+      <div id="shock" aria-hidden="true"></div>
       <!-- 12時方向固定の指針。onTick のたびに .bump を付け外しして弾ませる -->
       <div id="pointer" aria-hidden="true"></div>
     </div>

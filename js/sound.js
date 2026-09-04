@@ -350,6 +350,86 @@ window.NV = window.NV || {};
     } catch (e) {}
   }
 
+  // ---- impact / whoosh: 動きに音を貼る ------------------------------
+
+  // 停止の一撃。低い胴鳴りと短い打面ノイズを重ねる。
+  // 直後にファンファーレが乗るので、450ms で完全に消えきる長さに抑える。
+  function impact(strength) {
+    try {
+      if (unusable()) return;
+      var s = typeof strength === "number" && isFinite(strength)
+        ? Math.max(0.2, Math.min(1, strength)) : 1;
+      var t = now();
+
+      // 胴鳴り。140Hz から 42Hz へ落とすと「ドン」になる（落とさないと「ブー」）
+      var osc = ctx.createOscillator();
+      var og = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(140, t);
+      osc.frequency.exponentialRampToValueAtTime(42, t + 0.3);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(0.55 * s, t + 0.008);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.44);
+      osc.connect(og);
+      og.connect(master);
+      osc.start(t);
+      osc.stop(t + 0.46);
+      cleanupOnEnded(osc, [og]);
+
+      // 打面。ごく短いノイズを重ねないと輪郭が出ず、遠くまで届かない
+      var len = Math.max(1, Math.floor(ctx.sampleRate * 0.16));
+      var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+      }
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      var bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 1700;
+      bp.Q.value = 0.7;
+      var ng = ctx.createGain();
+      ng.gain.value = 0.34 * s;
+      src.connect(bp);
+      bp.connect(ng);
+      ng.connect(master);
+      src.start(t);
+      cleanupOnEnded(src, [bp, ng]);
+    } catch (e) {}
+  }
+
+  // 回り始めの出足。ノイズをローパスで下から上へ舐めるだけ。
+  // 無音からいきなりドラムロールが始まると «再生した» ように聞こえるので、その一手前を作る。
+  function whoosh() {
+    try {
+      if (unusable()) return;
+      var t = now();
+      var len = Math.max(1, Math.floor(ctx.sampleRate * 0.55));
+      var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      var lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(220, t);
+      lp.frequency.exponentialRampToValueAtTime(2800, t + 0.4);
+      lp.Q.value = 4;
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.3, t + 0.22);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.52);
+
+      src.connect(lp);
+      lp.connect(g);
+      g.connect(master);
+      src.start(t);
+      cleanupOnEnded(src, [lp, g]);
+    } catch (e) {}
+  }
+
   // ---- ui ---------------------------------------------------------------
 
   function ui() {
@@ -394,6 +474,8 @@ window.NV = window.NV || {};
     resume: resume,
     setEnabled: setEnabled,
     tick: tick,
+    impact: impact,
+    whoosh: whoosh,
     rollStart: rollStart,
     rollStop: rollStop,
     fanfare: fanfare,

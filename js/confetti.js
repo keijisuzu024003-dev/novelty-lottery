@@ -7,9 +7,10 @@ window.NV = window.NV || {};
 (function () {
   "use strict";
 
-  var GOLD = ["#FFD97A", "#FFC93C", "#F5A623"];
-  var RED = ["#FF5C5C", "#D93A3A", "#FFD97A"]; // 赤系＋金
-  var BLUE = ["#3FA9F5", "#1E7FD4", "#FFFFFF"]; // 青系＋白
+  // 円盤の扇（深紫・深緋・縹）と真鍮に合わせる。原色の赤青は盤から浮く
+  var GOLD = ["#F2DFAD", "#FFD97A", "#C9A24B", "#FFFFFF"];
+  var RED = ["#E39184", "#9E3129", "#F2DFAD"];
+  var BLUE = ["#7FA8C9", "#2A5375", "#EFE7D6"];
 
   var GRAVITY = 900; // px/sec^2
   var DRAG = 0.55;   // 空気抵抗（速度に比例して減速）
@@ -76,10 +77,10 @@ window.NV = window.NV || {};
   }
 
   // レベルごとの個数上限。Androidタブレットで60fpsを割らないための目安値。
-  var LEVEL_COUNT = { 1: 220, 2: 120, 3: 60 };
+  var LEVEL_COUNT = { 1: 380, 2: 220, 3: 120 };
   var LEVEL_COLORS = { 1: GOLD, 2: RED, 3: BLUE };
   // burst の多重呼び出しでパーティクル総数が暴走しないための絶対上限
-  var HARD_CAP = 500;
+  var HARD_CAP = 760;
 
   function burst(level) {
     try {
@@ -102,7 +103,7 @@ window.NV = window.NV || {};
         var ox = fromLeft ? cssW * rand(0.02, 0.12) : cssW * rand(0.88, 0.98);
         var oy = cssH * rand(0.92, 1.0);
         var dir = fromLeft ? 1 : -1; // 左からは右上へ、右からは左上へ
-        var speed = rand(420, 780);
+        var speed = rand(560, 1020);
         var ang = rand(-0.35, -0.15) + (fromLeft ? 0 : Math.PI); // 上方向基準の角度
         var vx = dir * speed * rand(0.5, 0.9);
         var vy = -speed;

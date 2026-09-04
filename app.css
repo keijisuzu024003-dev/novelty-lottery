@@ -1,9 +1,10 @@
 /* ノベルティ抽選ルーレット — 見た目
    ------------------------------------------------------------------
-   方針：カジノの福引盤ではなく「精密な計器」として作る。
-   前版は 金の縁＋電球＋光沢 という抽選アプリの典型的な絵面で、
-   「安っぽい・作り物っぽい」と評された。装飾を足す方向をやめ、
-   素材を3つに絞って質感と精度で見せる。
+   方針：盤は徹底して簡素に、動きは徹底して派手に。
+   静止画の作り込み（電球・光沢・目盛り・旋盤跡）は遠目に潰れて情報量だけが増える。
+   盤は「平らな色面＋細い環＋小さな軸」だけにし、
+   派手さは回転中の残像・光の流れと、停止時の衝撃波・閃光・振動に全部寄せる。
+   止まっているときは静かで、回すと化ける。この落差が «派手» の正体。
 
      漆黒（#0B0A09 系）  … 背景。青黒ではなく温かい黒。漆器の面
      真鍮（#C9A24B 系）  … 縁・指針・罫。磨きと影の差だけで金属に見せる
@@ -44,7 +45,10 @@
   --font-display:"Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN",serif;
   --font-ui:"Noto Sans JP","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
 
-  --wheel:min(86vw, 74vh);
+  /* ステージの一辺。円盤はこの 84%（wheel.js の STAGE_FILL）。残りは光と衝撃波の余白 */
+  --wheel:min(96vw, 84vh);
+  --disc-inset:8%;          /* (1 - 0.84) / 2。円盤の外周までの距離 */
+  --ptr-h:calc(var(--wheel) * 0.060);
 
   color-scheme:dark;
 }
@@ -84,6 +88,18 @@ button{
     radial-gradient(120% 90% at 50% -18%, #24201B 0%, rgba(36,32,27,0) 62%),
     linear-gradient(#0F0D0C 0%, #0B0A09 55%, #070605 100%);
 }
+/* 回転中だけ周囲を沈めて盤へ視線を集める。止まると 600ms かけて戻る */
+#bg::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:radial-gradient(58% 52% at 50% 50%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.80) 100%);
+  opacity:0;
+  transition:opacity 600ms ease;
+}
+body[data-state="spinning"] #bg::before,
+body[data-state="result"] #bg::before{ opacity:1; }
+
 /* 粒状のノイズ。均一なグラデーションはCG然として見えるので、わずかに荒らす */
 #bg::after{
   content:"";
@@ -117,15 +133,11 @@ body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
 /* 横向き＝円盤と情報を左右に。縦向き＝上下に積む */
 @media (orientation: landscape){
   #frame{ flex-direction:row; }
-  :root{ --wheel:min(49vw, 86vh); }
+  :root{ --wheel:min(55vw, 96vh); }
 }
 @media (orientation: portrait){
-  #frame{
-    flex-direction:column;
-    /* 指針は円盤の外へ出るので、その分だけ上を空けないと画面端で切れる */
-    padding-top:calc(clamp(14px, 2.5vmin, 34px) + var(--wheel) * 0.07);
-  }
-  :root{ --wheel:min(84vw, 48vh); }
+  #frame{ flex-direction:column; }
+  :root{ --wheel:min(95vw, 55vh); }
 }
 
 /* ---------- 円盤 ---------- */
@@ -137,6 +149,16 @@ body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
   height:var(--wheel);
   display:grid;
   place-items:center;
+  /* 回すとわずかに «寄る»。派手な演出ではなく、始まったことを体で分からせるため */
+  transform:scale(1);
+  transition:transform 700ms cubic-bezier(.2,.7,.3,1);
+}
+body[data-state="spinning"] #stage,
+body[data-state="result"] #stage{ transform:scale(1.035); }
+@media (prefers-reduced-motion: reduce){
+  #stage{ transition:none; }
+  body[data-state="spinning"] #stage,
+  body[data-state="result"] #stage{ transform:none; }
 }
 
 #wheel-canvas{
@@ -145,44 +167,83 @@ body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
   display:block;
 }
 
-/* 12時方向の指針。太い三角ではなく、計器の針のように細く長く */
+/* 12時方向の指針。ただの三角形1枚。装飾は一切載せない */
 #pointer{
   position:absolute;
   left:50%;
-  top:0;
-  width:calc(var(--wheel) * 0.052);
-  height:calc(var(--wheel) * 0.125);
-  min-width:16px;
-  min-height:40px;
-  transform:translate(-50%, -34%);
-  transform-origin:50% 22%;
-  background:linear-gradient(100deg,
-    #5E4715 0%, #C9A24B 34%, #F2DFAD 50%, #C9A24B 66%, #5E4715 100%);
-  clip-path:polygon(50% 100%, 8% 26%, 26% 0%, 74% 0%, 92% 26%);
-  filter:drop-shadow(0 0 1.5px rgba(0,0,0,0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.8));
+  /* 先端（三角の下端）が円盤の外周に軽く食い込む位置。--disc-inset に追従させる */
+  top:calc(var(--disc-inset) + 0.6% - var(--ptr-h));
+  width:calc(var(--wheel) * 0.050);
+  height:var(--ptr-h);
+  transform:translateX(-50%);
+  transform-origin:50% 0%;
+  background:var(--brass);
+  clip-path:polygon(50% 100%, 0% 0%, 100% 0%);
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,0.8));
   z-index:3;
 }
-/* 針の付け根。軸受けに見せる */
-#pointer::before{
+#pointer.bump{ animation:pointer-bump 90ms ease-out; }
+/* 停止の一撃で大きく跳ねる。回転中の bump（9度・90ms）とは別扱い */
+#pointer.kick{ animation:pointer-kick 380ms cubic-bezier(.2,.8,.3,1) both; }
+@keyframes pointer-kick{
+  0%  { transform:translateX(-50%) rotate(0deg); }
+  22% { transform:translateX(-50%) rotate(-19deg); }
+  52% { transform:translateX(-50%) rotate(9deg); }
+  76% { transform:translateX(-50%) rotate(-4deg); }
+  100%{ transform:translateX(-50%) rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce){ #pointer.kick{ animation:none; } }
+@keyframes pointer-bump{
+  0%  { transform:translateX(-50%) rotate(0deg); }
+  50% { transform:translateX(-50%) rotate(9deg); }
+  100%{ transform:translateX(-50%) rotate(0deg); }
+}
+
+/* 停止の衝撃波。canvas の外まで広がるので DOM 側で描く。
+   ::before / ::after の2本を時間差で抜くと «打った» 感じになる */
+#shock{
+  position:absolute;
+  inset:var(--disc-inset);
+  pointer-events:none;
+  z-index:2;
+}
+#shock::before,#shock::after{
   content:"";
   position:absolute;
-  left:50%;
-  top:-30%;
-  width:78%;
-  aspect-ratio:1;
-  transform:translateX(-50%);
+  inset:0;
   border-radius:50%;
-  background:radial-gradient(circle at 36% 30%, #F2DFAD 0%, #C9A24B 40%, #5E4715 100%);
-  box-shadow:0 2px 6px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(0,0,0,0.35);
+  border:calc(var(--wheel) * 0.014) solid rgba(255,242,212,0.85);
+  opacity:0;
 }
-#pointer.bump{ animation:pointer-bump 90ms ease-out; }
-@keyframes pointer-bump{
-  0%  { transform:translate(-50%, -34%) rotate(0deg); }
-  50% { transform:translate(-50%, -34%) rotate(7deg); }
-  100%{ transform:translate(-50%, -34%) rotate(0deg); }
+body.impact #shock::before{ animation:shockwave 700ms cubic-bezier(.1,.7,.3,1) both; }
+body.impact #shock::after{ animation:shockwave 700ms 130ms cubic-bezier(.1,.7,.3,1) both; }
+@keyframes shockwave{
+  0%   { transform:scale(1);   opacity:0.85; border-width:calc(var(--wheel) * 0.014); }
+  100% { transform:scale(2.6); opacity:0;    border-width:1px; }
+}
+@media (prefers-reduced-motion: reduce){
+  body.impact #shock::before,
+  body.impact #shock::after{ animation:none; }
 }
 @media (prefers-reduced-motion: reduce){
   #pointer.bump{ animation:none; }
+}
+
+/* 停止の瞬間、画面ごと揺らす。円盤の中だけで完結させると «画面の中の出来事» に留まる。
+   揺らすのは #frame だけ（結果の文字は揺らさない。読めなくなるので） */
+body.impact #frame{ animation:impact-shake 460ms cubic-bezier(.36,.07,.19,.97) both; }
+@keyframes impact-shake{
+  0%   { transform:translate3d(0,0,0) }
+  8%   { transform:translate3d(-11px, 7px, 0) }
+  18%  { transform:translate3d(9px, -6px, 0) }
+  30%  { transform:translate3d(-7px, -4px, 0) }
+  44%  { transform:translate3d(5px, 4px, 0) }
+  60%  { transform:translate3d(-3px, 2px, 0) }
+  78%  { transform:translate3d(2px, -1px, 0) }
+  100% { transform:translate3d(0,0,0) }
+}
+@media (prefers-reduced-motion: reduce){
+  body.impact #frame{ animation:none; }
 }
 
 /* ---------- 情報側 ---------- */
@@ -356,7 +417,7 @@ body[data-state="finished"] #overlay-finished{ display:flex; }
 
 #overlay-result{
   /* 円盤を沈めて文字を立てる。中心を少し明るく残して奥行きを出す */
-  background:radial-gradient(90% 70% at 50% 46%, rgba(11,10,9,0.80) 0%, rgba(7,6,5,0.96) 70%);
+  background:radial-gradient(90% 70% at 50% 46%, rgba(11,10,9,0.93) 0%, rgba(6,5,4,0.995) 68%);
   transition:opacity 200ms ease;
 }
 .result-inner{
@@ -384,6 +445,14 @@ body[data-state="finished"] #overlay-finished{ display:flex; }
   color:transparent;
   filter:drop-shadow(0 3px 10px rgba(0,0,0,0.6));
 }
+/* 奥から叩きつける。行き過ぎて戻す1往復だけ入れる（何度も跳ねると玩具になる） */
+#result-rank.slam{ animation:rank-slam 560ms cubic-bezier(.12,.9,.2,1.06) both; }
+@keyframes rank-slam{
+  0%   { transform:scale(2.4); opacity:0; filter:blur(10px) drop-shadow(0 3px 10px rgba(0,0,0,0.6)); }
+  48%  { transform:scale(0.93); opacity:1; filter:blur(0) drop-shadow(0 3px 10px rgba(0,0,0,0.6)); }
+  100% { transform:scale(1); }
+}
+@media (prefers-reduced-motion: reduce){ #result-rank.slam{ animation:none; } }
 
 #result-plate{
   width:clamp(112px, 26vmin, 260px);
@@ -529,13 +598,16 @@ body.result-peek #btn-reopen{ display:block; }
   position:fixed;
   inset:0;
   z-index:7;
-  background:#F2DFAD;
+  background:#FFF6E2;
   opacity:0;
   pointer-events:none;
+  /* 等級ごとの強さ。app.js が直前に書き換える */
+  --peak:0.32;
+  --fade:220ms;
 }
-#flash.on{ animation:flash-in-out 140ms ease-out; }
+#flash.on{ animation:flash-in-out var(--fade) ease-out; }
 @keyframes flash-in-out{
-  0%{ opacity:0; } 30%{ opacity:0.7; } 100%{ opacity:0; }
+  0%{ opacity:0; } 12%{ opacity:var(--peak); } 100%{ opacity:0; }
 }
 @media (prefers-reduced-motion: reduce){ #flash.on{ animation:none; } }
 
