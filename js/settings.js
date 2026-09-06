@@ -453,6 +453,11 @@ window.NV = window.NV || {};
             '<button type="button" class="nvs-btn" data-action="test-sound">音をテスト</button>' +
             '<span class="nvs-muted" data-role="sound-state"></span>' +
           '</div>' +
+          '<div class="nvs-row nvs-toggle-row">' +
+            '<label class="nvs-label" style="min-width:auto;">会場モード</label>' +
+            '<input type="checkbox" data-action="set-bright" style="width:22px;height:22px;">' +
+            '<span class="nvs-muted">明るいホールで画面が沈んで見えるときに入れる（全体を一段明るく）</span>' +
+          '</div>' +
           '<div class="nvs-row">' +
             '<span class="nvs-muted" style="line-height:1.7;">' +
               '鳴らないときは端末側です。①タブがミュートになっていないか ' +
@@ -502,6 +507,8 @@ window.NV = window.NV || {};
     r.querySelector('[data-action="set-venue"]').value = state.venue;
     var soundBox = r.querySelector('[data-action="set-sound"]');
     soundBox.checked = !!(state.settings && state.settings.soundOn);
+    r.querySelector('[data-action="set-bright"]').checked =
+      !!(state.settings && state.settings.brightMode);
     r.querySelector('[data-action="set-auto"]').value = toNum(state.settings && state.settings.autoAdvanceSec, 0);
     r.querySelector('[data-action="set-itempick"]').value = (state.settings && state.settings.itemPick === "even") ? "even" : "stock-weighted";
 
@@ -661,6 +668,13 @@ window.NV = window.NV || {};
     if (action === "set-sound") {
       state.settings.soundOn = !!t.checked;
       try { NV.sound.setEnabled(state.settings.soundOn); } catch (e) {}
+      notify();
+      return;
+    }
+    if (action === "set-bright") {
+      state.settings.brightMode = !!t.checked;
+      // その場で効かないと «明るくなったか» が判断できない。保存を待たずに反映する
+      try { document.body.classList.toggle('bright', state.settings.brightMode); } catch (e) {}
       notify();
       return;
     }

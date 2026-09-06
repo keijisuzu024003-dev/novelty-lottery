@@ -137,7 +137,12 @@ body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
 }
 @media (orientation: portrait){
   #frame{ flex-direction:column; }
-  :root{ --wheel:min(95vw, 55vh); }
+  /* 縦向きは «盤＋絵＋品名＋一言＋ボタン» を1画面に収める必要がある。
+     盤を欲張ると下がはみ出す */
+  :root{ --wheel:min(92vw, 47vh); }
+}
+@media (orientation: portrait){
+  .plate{ width:clamp(110px, 22vmin, 210px); }
 }
 
 /* ---------- 円盤 ---------- */
@@ -294,19 +299,25 @@ body.impact #frame{ animation:impact-shake 460ms cubic-bezier(.36,.07,.19,.97) b
 /* 待機中に景品を順に見せる札 */
 #prize-card{
   display:flex;
-  align-items:center;
-  gap:clamp(12px, 2vmin, 22px);
+  /* 絵を大きくしたので横並びだと品名の幅が足りず、3行に割れて読みにくい。
+     縦に積んで、品名にパネルの全幅を使わせる */
+  flex-direction:column;
+  align-items:flex-start;
+  gap:clamp(8px, 1.6vmin, 16px);
+  width:100%;
   opacity:0;
   transition:opacity 520ms ease;
 }
+@media (orientation: portrait){ #prize-card{ align-items:center; } }
 body[data-state="idle"] #prize-card{ opacity:1; }
 #prize-card.swap{ opacity:0; }
 @media (prefers-reduced-motion: reduce){ #prize-card{ transition:none; } }
 
-/* 生成りの台。漆黒と真鍮に対する第三の素材 */
+/* 生成りの台。漆黒と真鍮に対する第三の素材。
+   ここが «足を止める理由» なので、パネルの中で最大の要素にする */
 .plate{
   flex:0 0 auto;
-  width:clamp(84px, 15vmin, 168px);
+  width:clamp(130px, 30vmin, 300px);
   aspect-ratio:1;
   border-radius:50%;
   background:radial-gradient(circle at 38% 30%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
@@ -336,29 +347,43 @@ body[data-state="idle"] #prize-card{ opacity:1; }
 }
 #prize-card .name{
   font-family:var(--font-display);
-  font-size:clamp(15px, 2.5vmin, 25px);
-  line-height:1.5;
+  font-size:clamp(17px, 3vmin, 31px);
+  line-height:1.45;
   color:var(--ink);
   text-wrap:balance;
+  line-break:strict;
+}
+/* 品目の一言。来場者向けであると同時に、渡すときスタッフが添える一言の台本 */
+#prize-card .note{
+  font-size:clamp(12px, 2vmin, 19px);
+  line-height:1.7;
+  color:var(--ink-dim);
+  text-wrap:balance;
+  line-break:strict;
+  margin-top:2px;
 }
 
 /* 操作ボタン。丸い飴玉ではなく、真鍮の細い罫で囲った帯にする */
+/* 待機中は «画面でいちばん明るいもの» にする。
+   暗い帯に細い枠だけでは、黒い背景に沈んで «押せる» と伝わらない。
+   円盤よりボタンが明るいこと。ここが逆転していると来場者が迷う */
 #btn-start{
   position:relative;
   width:100%;
-  min-height:clamp(62px, 9vmin, 92px);
+  min-height:clamp(66px, 9.6vmin, 98px);
   padding:0 clamp(20px, 3vw, 44px);
-  border:1px solid #9C7A2E;
+  border:1px solid var(--brass-hi);
   border-radius:2px;
-  background:linear-gradient(#1C1917, #131110);
-  color:var(--brass-hi);
+  background:linear-gradient(178deg, #F4E2B4 0%, #D9B463 42%, #C9A24B 62%, #A8842F 100%);
+  color:#1A1409;
   font-family:var(--font-display);
-  font-size:clamp(19px, 3.1vmin, 34px);
+  font-size:clamp(20px, 3.3vmin, 36px);
   letter-spacing:0.34em;
   text-indent:0.34em;
   cursor:pointer;
   overflow:hidden;
-  transition:color 200ms ease, border-color 200ms ease;
+  box-shadow:0 6px 22px rgba(201,162,75,0.28);
+  transition:filter 160ms ease, box-shadow 200ms ease;
 }
 /* 罫の内側をゆっくり満たす光。待機中だけ動かして「押していい」ことを示す */
 #btn-start::after{
@@ -366,7 +391,7 @@ body[data-state="idle"] #prize-card{ opacity:1; }
   position:absolute;
   inset:0;
   background:linear-gradient(100deg,
-    rgba(242,223,173,0) 20%, rgba(242,223,173,0.16) 50%, rgba(242,223,173,0) 80%);
+    rgba(255,255,255,0) 20%, rgba(255,255,255,0.55) 50%, rgba(255,255,255,0) 80%);
   transform:translateX(-100%);
 }
 body[data-state="idle"] #btn-start::after{
@@ -380,10 +405,13 @@ body[data-state="idle"] #btn-start::after{
 @media (prefers-reduced-motion: reduce){
   body[data-state="idle"] #btn-start::after{ animation:none; }
 }
-#btn-start:active:not(:disabled){ background:#1C1917; }
+#btn-start:active:not(:disabled){ filter:brightness(0.88); box-shadow:none; }
+/* 回転中は «押せない» ことが一目で分かるよう、塗りを落として枠だけに戻す */
 #btn-start:disabled{
+  background:linear-gradient(#1C1917, #131110);
   color:var(--ink-dim);
   border-color:#3A342B;
+  box-shadow:none;
   cursor:not-allowed;
 }
 #btn-start:disabled::after{ display:none; }
@@ -496,6 +524,19 @@ body[data-state="finished"] #overlay-finished{ display:flex; }
 }
 #result-item.len-m{ font-size:clamp(17px, 3.3vmin, 34px); }
 #result-item.len-l{ font-size:clamp(16px, 2.7vmin, 28px); }
+
+/* 結果画面の一言。品名より一段落として、読み上げやすい長さに収める */
+#result-note{
+  font-family:var(--font-display);
+  font-size:clamp(13px, 2.1vmin, 22px);
+  line-height:1.75;
+  color:var(--brass);
+  max-width:min(88vw, 26em);
+  text-wrap:balance;
+  line-break:strict;
+  margin-top:calc(-1 * clamp(2px, 0.6vmin, 8px));
+}
+#result-note:empty{ display:none; }
 
 #result-actions{
   display:flex;
@@ -620,6 +661,36 @@ body.result-peek #btn-reopen{ display:block; }
   0%{ opacity:0; } 12%{ opacity:var(--peak); } 100%{ opacity:0; }
 }
 @media (prefers-reduced-motion: reduce){ #flash.on{ animation:none; } }
+
+/* ---------- 会場モード ---------- */
+/*
+   展示会のホールは明るく、11型のグレア画面は鏡になる。
+   真っ黒基調はそこでコントラストを失う（黒が «映り込んだ灰色» になる）。
+   設定画面のトグルで、背景を持ち上げ、盤と文字の輝度を上げる。
+   既定はオフ。会場に入って «沈んで見える» ときだけ入れる。
+*/
+body.bright{
+  --lacquer-0:#1A1613;
+  --lacquer-1:#241F1A;
+  --lacquer-2:#2E2822;
+  --brass-hi:#FBEFCE;
+  --brass:#E0BC6A;
+  --brass-mid:#B08C36;
+  --washi:#FFFBF1;
+  --ink:#FFFBF2;
+  --ink-dim:#C0B6A4;
+}
+body.bright #bg{
+  background:
+    radial-gradient(120% 90% at 50% -18%, #3A342C 0%, rgba(58,52,44,0) 62%),
+    linear-gradient(#221D19 0%, #1A1613 55%, #14110F 100%);
+}
+/* 扇の色は canvas 側で塗るので CSS からは触れない。まとめて持ち上げる */
+body.bright #wheel-canvas{ filter:brightness(1.20) saturate(1.05); }
+/* 幕は薄くしない（文字が読めなくなる）。代わりに中心を少しだけ開ける */
+body.bright #overlay-result{
+  background:radial-gradient(90% 70% at 50% 46%, rgba(20,17,14,0.93) 0%, rgba(12,10,8,0.995) 68%);
+}
 
 /* ---------- スタッフ用 ---------- */
 

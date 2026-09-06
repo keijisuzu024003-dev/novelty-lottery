@@ -15,7 +15,9 @@ window.NV = window.NV || {};
   // 1等を紫にしたのは、金にすると真鍮の縁と溶けて「どこが1等か」が読めなくなるため。
   // 位階で紫が最上位という慣習にも合う。
   var RANK_COLORS = [
-    { color: "#4A2C64", colorDark: "#22132F" }, // 1等 深紫
+    // 1等だけ «明るさ» で差をつける。距離と照明で先に失われるのは色相で、明度は残る。
+    // 2等 #9E3129 / 3等 #2A5375 の約2倍の輝度にしてある（下げると1等が埋もれる）
+    { color: "#7A5AA6", colorDark: "#3A2A50" }, // 1等 藤紫
     { color: "#9E3129", colorDark: "#4A1310" }, // 2等 深緋
     { color: "#2A5375", colorDark: "#101F2D" }  // 3等 縹
   ];
@@ -76,7 +78,8 @@ window.NV = window.NV || {};
         pin: "1234",
         soundOn: true,
         autoAdvanceSec: 0,
-        itemPick: "stock-weighted"
+        itemPick: "stock-weighted",
+        brightMode: false
       }
     };
   }

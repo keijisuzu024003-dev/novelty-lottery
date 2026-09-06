@@ -42,11 +42,13 @@ window.NV = window.NV || {};
     el.overlayResult = document.getElementById('overlay-result');
     el.resultRank = document.getElementById('result-rank');
     el.resultItem = document.getElementById('result-item');
+    el.resultNote = document.getElementById('result-note');
     el.btnClose = document.getElementById('btn-close');
     el.prizeCard = document.getElementById('prize-card');
     el.prizeImg = document.getElementById('prize-img');
     el.prizeRank = document.getElementById('prize-rank');
     el.prizeName = document.getElementById('prize-name');
+    el.prizeNote = document.getElementById('prize-note');
     el.resultPlate = document.getElementById('result-plate');
     el.resultImg = document.getElementById('result-img');
     el.btnReopen = document.getElementById('btn-reopen');
@@ -121,6 +123,7 @@ window.NV = window.NV || {};
         NV.sound.setEnabled(!!state.settings.soundOn);
       }
     } catch (e) {}
+    applyBrightMode();
 
     bindEvents();
     requestWakeLock();
@@ -356,8 +359,9 @@ window.NV = window.NV || {};
     setPeek(false);
     if (el.resultRank) { el.resultRank.textContent = result.rankLabel; }
     // B. 何が当たったのかを絵で見せる。文字だけだと現物が想像できない
+    var found = itemById(result.itemId);
     if (el.resultPlate && el.resultImg) {
-      var img = imageFor(result.itemId);
+      var img = found && found.image;
       if (img) {
         el.resultImg.src = img;
         el.resultPlate.classList.remove('hidden');
@@ -374,6 +378,8 @@ window.NV = window.NV || {};
       var n = (result.itemName || '').length;
       el.resultItem.className = n > 22 ? 'len-l' : (n > 12 ? 'len-m' : '');
     }
+    // 品目の一言。無い品目（デモデータや手入力）では行ごと消える
+    if (el.resultNote) { el.resultNote.textContent = (found && found.note) || ''; }
     armNext();
     setState('result');
     slamRank();
@@ -475,7 +481,10 @@ window.NV = window.NV || {};
       var items = ranks[i].items || [];
       for (var j = 0; j < items.length; j++) {
         if (Number(items[j].stock) > 0) {
-          out.push({ rank: ranks[i].label, name: items[j].name, image: items[j].image });
+          out.push({
+            rank: ranks[i].label, name: items[j].name,
+            image: items[j].image, note: items[j].note
+          });
         }
       }
     }
@@ -495,6 +504,7 @@ window.NV = window.NV || {};
     setTimeout(function(){
       if (el.prizeRank) { el.prizeRank.textContent = p.rank; }
       if (el.prizeName) { el.prizeName.textContent = p.name; }
+      if (el.prizeNote) { el.prizeNote.textContent = p.note || ''; }
       if (el.prizeImg) {
         if (p.image) { el.prizeImg.src = p.image; el.prizeImg.style.display = ''; }
         else { el.prizeImg.removeAttribute('src'); el.prizeImg.style.display = 'none'; }
@@ -512,13 +522,13 @@ window.NV = window.NV || {};
     if (prizeTimer) { clearInterval(prizeTimer); prizeTimer = null; }
   }
 
-  // 品目IDから画像を引く（結果表示用）
-  function imageFor(itemId){
+  // 品目IDから品目そのものを引く（結果表示の絵と一言に使う）
+  function itemById(itemId){
     var ranks = (state && state.ranks) || [];
     for (var i = 0; i < ranks.length; i++) {
       var items = ranks[i].items || [];
       for (var j = 0; j < items.length; j++) {
-        if (items[j].id === itemId) { return items[j].image || null; }
+        if (items[j].id === itemId) { return items[j]; }
       }
     }
     return null;
@@ -576,8 +586,16 @@ window.NV = window.NV || {};
     }
   }
 
+  // 会場モード。明るいホールで «沈んで見える» ときにスタッフが入れる
+  function applyBrightMode(){
+    try {
+      el.body.classList.toggle('bright', !!(state.settings && state.settings.brightMode));
+    } catch (e) {}
+  }
+
   function onSettingsSaved(nextState){
     if (nextState) { state = nextState; }
+    applyBrightMode();
     try { NV.storage.save(state); } catch (e) {}
     try { NV.sound.setEnabled(!!(state.settings && state.settings.soundOn)); } catch (e) {}
     goIdleOrFinished();  // 円盤の作り直しはこの中でやる

@@ -45,6 +45,9 @@ window.NV = window.NV || {};
     // 公開リポジトリに景品を出さないため、画像はアプリ本体ではなく会場データ側に持たせている。
     var out = { id: id, name: name, stock: stock, initial: initial };
     if (typeof raw.image === "string" && raw.image) { out.image = raw.image; }
+    // 品目の一言（特長）。画像と同じく会場データJSON にだけ入っている。
+    // ここで落とすと結果画面から一言が消える
+    if (typeof raw.note === "string" && raw.note) { out.note = raw.note; }
     return out;
   }
 
@@ -98,6 +101,10 @@ window.NV = window.NV || {};
     out.autoAdvanceSec = isFinite(autoNum) ? Math.max(0, Math.floor(autoNum)) : defSettings.autoAdvanceSec;
 
     out.itemPick = (s.itemPick === "even" || s.itemPick === "stock-weighted") ? s.itemPick : defSettings.itemPick;
+
+    // 会場モード（明るいホール向けに全体を一段明るく）。
+    // ここに追記し忘れると、設定してもリロードで戻る
+    out.brightMode = (typeof s.brightMode === "boolean") ? s.brightMode : !!defSettings.brightMode;
 
     return out;
   }
