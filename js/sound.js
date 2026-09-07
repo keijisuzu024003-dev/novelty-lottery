@@ -12,6 +12,9 @@ window.NV = window.NV || {};
   var master = null;       // マスターゲイン（setEnabled で 0 にする）
   var compressor = null;   // 最終段のリミッタ代わり
   var enabled = true;      // setEnabled の現在値（init 前に呼ばれても状態は覚えておく）
+  var volume = 1;          // 0〜1。会場のざわつきに合わせてスタッフが下げる。
+                           // 1 より上は用意しない（実測ピーク 1.16 で既にコンプレッサが働いており、
+                           // 持ち上げても歪むだけ。ダイナミクスが潰れると演出の落差が消える）
   var initTried = false;   // init() の多重呼び出し対策
 
   // ロール（ドラムロール）の状態。rollStart/rollStop の多重呼び出しに耐えるため外に持つ。
@@ -48,7 +51,7 @@ window.NV = window.NV || {};
       compressor.connect(ctx.destination);
 
       master = ctx.createGain();
-      master.gain.value = enabled ? 1 : 0;
+      master.gain.value = targetGain();
       master.connect(compressor);
     } catch (e) {
       // 生成失敗時は ctx を確実に null に戻し、以降の全関数を no-op 化する
@@ -69,16 +72,36 @@ window.NV = window.NV || {};
     }
   }
 
-  function setEnabled(on) {
-    enabled = !!on;
+  // ON/OFF と音量をまとめて1つのゲインに落とす
+  function targetGain() {
+    return enabled ? volume : 0;
+  }
+
+  function applyGain() {
     try {
       if (!ctx || !master) return;
       // クリック防止に少しだけ時間をかけて変化させる
       var t = now();
       master.gain.cancelScheduledValues(t);
       master.gain.setValueAtTime(master.gain.value, t);
-      master.gain.linearRampToValueAtTime(enabled ? 1 : 0, t + 0.05);
+      master.gain.linearRampToValueAtTime(targetGain(), t + 0.05);
     } catch (e) {}
+  }
+
+  function setEnabled(on) {
+    enabled = !!on;
+    applyGain();
+  }
+
+  // 0〜1。1 を超える値は 1 に丸める（上げても歪むだけなので上限を切ってある）
+  function setVolume(v) {
+    var n = Number(v);
+    volume = isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+    applyGain();
+  }
+
+  function getVolume() {
+    return volume;
   }
 
   // 呼び出し前に毎回チェックする共通ガード。ctx が無い/enabled=false なら true を返して早期リターンさせる。
@@ -551,9 +574,10 @@ window.NV = window.NV || {};
     try {
       if (!ctx) return { ok: false, state: "なし", reason: "音の仕組みが起動していません" };
       return {
-        ok: ctx.state === "running" && enabled,
+        ok: ctx.state === "running" && enabled && volume > 0,
         state: ctx.state,
         enabled: enabled,
+        setting: +volume.toFixed(2),
         volume: master ? +master.gain.value.toFixed(2) : 0
       };
     } catch (e) {
@@ -566,6 +590,8 @@ window.NV = window.NV || {};
     init: init,
     resume: resume,
     setEnabled: setEnabled,
+    setVolume: setVolume,
+    getVolume: getVolume,
     tick: tick,
     impact: impact,
     ratchetTick: ratchetTick,

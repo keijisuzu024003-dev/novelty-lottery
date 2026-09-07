@@ -97,7 +97,11 @@ window.NV = window.NV || {};
       ".nvs-dots{font-size:28px;letter-spacing:10px;min-height:36px;margin:8px 0;}" +
       ".nvs-error{color:#FF9C9C;font-size:13px;min-height:18px;}" +
       ".nvs-msg{font-size:13px;color:#8CF5A0;min-height:18px;}" +
-      ".nvs-toggle-row{display:flex;align-items:center;gap:10px;}" +
+      ".nvs-toggle-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}" +
+      ".nvs-range{flex:1 1 180px;max-width:260px;accent-color:#C9A24B;height:26px;}" +
+      // チェックボックスも真鍮に。既定の青だけ浮いて見える
+      ".nvs-toggle-row input[type=checkbox]{accent-color:#C9A24B;}" +
+      ".nvs-range-val{font-variant-numeric:tabular-nums;min-width:3.5em;text-align:right;color:#F2DFAD;font-size:13px;}" +
       ".nvs-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9500;" +
         "display:flex;align-items:center;justify-content:center;padding:16px;}" +
       ".nvs-confirm-box{background:#131110;border:1px solid #4A4335;border-radius:14px;padding:20px;" +
@@ -401,6 +405,22 @@ window.NV = window.NV || {};
     } catch (e) { /* 表示だけの機能なので失敗しても設定画面は開いたままにする */ }
   }
 
+  function volumeOf(st) {
+    var v = st && st.settings ? Number(st.settings.volume) : NaN;
+    return isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+  }
+
+  function setVolumeUI(v) {
+    try {
+      var root = getRoot();
+      if (!root) return;
+      var slider = root.querySelector('[data-action="set-volume"]');
+      if (slider) slider.value = String(Math.round(v * 100));
+      var out = root.querySelector('[data-role="volume-val"]');
+      if (out) out.textContent = Math.round(v * 100) + "%";
+    } catch (e) {}
+  }
+
   function showSoundState() {
     try {
       var el = document.querySelector('[data-role="sound-state"]');
@@ -408,11 +428,13 @@ window.NV = window.NV || {};
       var st = (NV.sound && NV.sound.status) ? NV.sound.status() : null;
       if (!st) { el.textContent = ""; return; }
       if (st.ok) {
-        el.textContent = "音は出せる状態です（" + st.state + " / 音量 " + st.volume + "）";
+        el.textContent = "音は出せる状態です（" + st.state + " / 音量 "
+          + Math.round((st.setting == null ? 1 : st.setting) * 100) + "%）";
         el.style.color = "#7FE0A8";
       } else {
         el.textContent = "音が止まっています（" + st.state + "）"
-          + (st.enabled === false ? " ※アプリ側でOFF" : " ※端末側の可能性");
+          + (st.enabled === false ? " ※アプリ側でOFF"
+             : (st.setting === 0 ? " ※アプリ側の音量が0" : " ※端末側の可能性"));
         el.style.color = "#FFB4A2";
       }
     } catch (e) {}
@@ -452,6 +474,13 @@ window.NV = window.NV || {};
             '<input type="checkbox" data-action="set-sound" style="width:22px;height:22px;">' +
             '<button type="button" class="nvs-btn" data-action="test-sound">音をテスト</button>' +
             '<span class="nvs-muted" data-role="sound-state"></span>' +
+          '</div>' +
+          '<div class="nvs-row nvs-toggle-row">' +
+            '<label class="nvs-label" style="min-width:auto;">音量</label>' +
+            '<input type="range" min="0" max="100" step="5" class="nvs-range" data-action="set-volume">' +
+            '<span class="nvs-range-val" data-role="volume-val"></span>' +
+            '<span class="nvs-muted">端末の音量は最大のままにして、ここで会場のざわつきに合わせる'
+              + '（100%より上は歪むだけなので用意していません）</span>' +
           '</div>' +
           '<div class="nvs-row nvs-toggle-row">' +
             '<label class="nvs-label" style="min-width:auto;">会場モード</label>' +
@@ -509,6 +538,7 @@ window.NV = window.NV || {};
     soundBox.checked = !!(state.settings && state.settings.soundOn);
     r.querySelector('[data-action="set-bright"]').checked =
       !!(state.settings && state.settings.brightMode);
+    setVolumeUI(volumeOf(state));
     r.querySelector('[data-action="set-auto"]').value = toNum(state.settings && state.settings.autoAdvanceSec, 0);
     r.querySelector('[data-action="set-itempick"]').value = (state.settings && state.settings.itemPick === "even") ? "even" : "stock-weighted";
 
@@ -545,6 +575,30 @@ window.NV = window.NV || {};
 
     if (action === "close") {
       closeInternal();
+      return;
+    }
+
+    if (action === "test-sound") {
+      // 抽選を回さずに音だけ確かめられるようにする。当日の設営で使う。
+      try {
+        NV.sound.init();
+        NV.sound.resume();
+        NV.sound.setEnabled(true);
+        state.settings.soundOn = true;
+        if (!(volumeOf(state) > 0)) {
+          // 音量0のままテストしても «壊れている» としか見えない。ON と同じ扱いで戻す
+          state.settings.volume = 1;
+          NV.sound.setVolume(1);
+          setVolumeUI(1);
+        }
+        var box = document.querySelector('[data-action="set-sound"]');
+        if (box) box.checked = true;
+        NV.sound.fanfare(0);
+        setTimeout(function () { try { NV.sound.applause(1.2); } catch (e) {} }, 700);
+      } catch (e) {}
+      showSoundState();
+      setTimeout(showSoundState, 600);
+      notify();
       return;
     }
     if (action === "item-remove") {
@@ -621,6 +675,15 @@ window.NV = window.NV || {};
     var action = t.getAttribute && t.getAttribute("data-action");
     if (!action) return;
 
+    if (action === "set-volume") {
+      var vol = Math.max(0, Math.min(1, toNum(t.value, 100) / 100));
+      state.settings.volume = vol;
+      try { NV.sound.setVolume(vol); } catch (e) {}
+      setVolumeUI(vol);
+      showSoundState();
+      notify();
+      return;
+    }
     if (action === "rank-label") {
       var rank = findRank(t.getAttribute("data-rank"));
       if (rank) { rank.label = t.value; notify(); }
@@ -675,23 +738,6 @@ window.NV = window.NV || {};
       state.settings.brightMode = !!t.checked;
       // その場で効かないと «明るくなったか» が判断できない。保存を待たずに反映する
       try { document.body.classList.toggle('bright', state.settings.brightMode); } catch (e) {}
-      notify();
-      return;
-    }
-    if (action === "test-sound") {
-      // 抽選を回さずに音だけ確かめられるようにする。当日の設営で使う。
-      try {
-        NV.sound.init();
-        NV.sound.resume();
-        NV.sound.setEnabled(true);
-        state.settings.soundOn = true;
-        var box = document.querySelector('[data-action="set-sound"]');
-        if (box) box.checked = true;
-        NV.sound.fanfare(0);
-        setTimeout(function () { try { NV.sound.applause(1.2); } catch (e) {} }, 700);
-      } catch (e) {}
-      showSoundState();
-      setTimeout(showSoundState, 600);
       notify();
       return;
     }

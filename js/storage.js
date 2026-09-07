@@ -106,6 +106,11 @@ window.NV = window.NV || {};
     // ここに追記し忘れると、設定してもリロードで戻る
     out.brightMode = (typeof s.brightMode === "boolean") ? s.brightMode : !!defSettings.brightMode;
 
+    // アプリ内の音量（0〜1）。端末の音量とは別に、会場のざわつきへ合わせるためのもの
+    var volNum = toNum(s.volume);
+    out.volume = isFinite(volNum) ? Math.max(0, Math.min(1, volNum))
+                                  : (defSettings.volume == null ? 1 : defSettings.volume);
+
     return out;
   }
 

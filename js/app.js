@@ -120,6 +120,8 @@ window.NV = window.NV || {};
 
     try {
       if (state.settings) {
+        // 音量を先に入れてから ON/OFF（どちらも同じゲインに落ちる）
+        NV.sound.setVolume(state.settings.volume == null ? 1 : state.settings.volume);
         NV.sound.setEnabled(!!state.settings.soundOn);
       }
     } catch (e) {}
@@ -598,7 +600,11 @@ window.NV = window.NV || {};
     if (nextState) { state = nextState; }
     applyBrightMode();
     try { NV.storage.save(state); } catch (e) {}
-    try { NV.sound.setEnabled(!!(state.settings && state.settings.soundOn)); } catch (e) {}
+    try {
+      NV.sound.setVolume(state.settings && state.settings.volume == null
+        ? 1 : state.settings.volume);
+      NV.sound.setEnabled(!!(state.settings && state.settings.soundOn));
+    } catch (e) {}
     goIdleOrFinished();  // 円盤の作り直しはこの中でやる
   }
 

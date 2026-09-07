@@ -79,7 +79,8 @@ window.NV = window.NV || {};
         soundOn: true,
         autoAdvanceSec: 0,
         itemPick: "stock-weighted",
-        brightMode: false
+        brightMode: false,
+        volume: 1
       }
     };
   }
