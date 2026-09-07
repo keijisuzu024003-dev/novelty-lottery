@@ -382,7 +382,7 @@ window.NV = window.NV || {};
     if (el.resultNote) { el.resultNote.textContent = (found && found.note) || ''; }
     armNext();
     setState('result');
-    slamRank();
+    slamResult();
     scheduleAutoAdvance();
   }
 
@@ -443,12 +443,13 @@ window.NV = window.NV || {};
     }, 520);
   }
 
-  // 等級名を奥から叩きつける。display:none からの復帰でも確実に頭から流す
-  function slamRank(){
-    if (!el.resultRank) { return; }
-    el.resultRank.classList.remove('slam');
-    void el.resultRank.offsetWidth;
-    el.resultRank.classList.add('slam');
+  // 品名を奥から叩きつける。display:none からの復帰でも確実に頭から流す。
+  // 叩きつけるのは «主役» ＝ 品名であって等級ではない（等級は添え物に降格した）
+  function slamResult(){
+    if (!el.resultItem) { return; }
+    el.resultItem.classList.remove('slam');
+    void el.resultItem.offsetWidth;
+    el.resultItem.classList.add('slam');
   }
 
   function scheduleAutoAdvance(){

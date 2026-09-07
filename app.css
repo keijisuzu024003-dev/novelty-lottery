@@ -469,31 +469,19 @@ body[data-state="finished"] #overlay-finished{ display:flex; }
   .result-inner{ gap:clamp(8px, 1.6vmin, 18px); }
 }
 
+/* 等級は «添え物»。順位ではなく、もらえる物を先に見せる。
+   小さい字に金のグラデーションをかけると濁るので、ここは単色の真鍮 */
 #result-rank{
   font-family:var(--font-display);
-  font-size:clamp(40px, 12vmin, 132px);
-  line-height:1.05;
-  letter-spacing:0.14em;
-  text-indent:0.14em;
-  /* 平坦な金色ではなく、上下で明暗が変わる金属の面として塗る */
-  background:linear-gradient(178deg,
-    #F2DFAD 6%, #E7C878 30%, #C9A24B 52%, #A9832F 74%, #F2DFAD 100%);
-  -webkit-background-clip:text;
-  background-clip:text;
-  color:transparent;
-  filter:drop-shadow(0 3px 10px rgba(0,0,0,0.6));
+  font-size:clamp(15px, 2.8vmin, 30px);
+  line-height:1.4;
+  letter-spacing:0.42em;
+  text-indent:0.42em;
+  color:var(--brass);
 }
-/* 奥から叩きつける。行き過ぎて戻す1往復だけ入れる（何度も跳ねると玩具になる） */
-#result-rank.slam{ animation:rank-slam 560ms cubic-bezier(.12,.9,.2,1.06) both; }
-@keyframes rank-slam{
-  0%   { transform:scale(2.4); opacity:0; filter:blur(10px) drop-shadow(0 3px 10px rgba(0,0,0,0.6)); }
-  48%  { transform:scale(0.93); opacity:1; filter:blur(0) drop-shadow(0 3px 10px rgba(0,0,0,0.6)); }
-  100% { transform:scale(1); }
-}
-@media (prefers-reduced-motion: reduce){ #result-rank.slam{ animation:none; } }
 
 #result-plate{
-  width:clamp(112px, 26vmin, 260px);
+  width:clamp(120px, 28vmin, 280px);
   aspect-ratio:1;
   border-radius:50%;
   background:radial-gradient(circle at 38% 28%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
@@ -511,24 +499,41 @@ body[data-state="finished"] #overlay-finished{ display:flex; }
 }
 @media (prefers-reduced-motion: reduce){ #result-plate{ animation:none; } }
 
+/* 品名が主役。金の «面» として塗り、奥から叩きつける */
 #result-item{
   font-family:var(--font-display);
-  font-size:clamp(19px, 4.2vmin, 46px);
-  line-height:1.5;
+  font-size:clamp(26px, 6.6vmin, 72px);
+  line-height:1.35;
   letter-spacing:0.06em;
-  color:var(--ink);
-  max-width:min(90vw, 22em);
+  max-width:min(92vw, 20em);
   text-wrap:balance;
   line-break:strict;
   overflow-wrap:anywhere;
+  /* 平坦な金色ではなく、上下で明暗が変わる金属の面として塗る */
+  background:linear-gradient(178deg,
+    #F2DFAD 6%, #E7C878 30%, #C9A24B 52%, #A9832F 74%, #F2DFAD 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  filter:drop-shadow(0 3px 10px rgba(0,0,0,0.6));
 }
-#result-item.len-m{ font-size:clamp(17px, 3.3vmin, 34px); }
-#result-item.len-l{ font-size:clamp(16px, 2.7vmin, 28px); }
+/* 品目名は20文字前後になることがある。文字数で段階的に縮める（app.js が付ける） */
+#result-item.len-m{ font-size:clamp(22px, 5.2vmin, 56px); }
+#result-item.len-l{ font-size:clamp(19px, 4.2vmin, 46px); }
+
+/* 奥から叩きつける。行き過ぎて戻す1往復だけ入れる（何度も跳ねると玩具になる） */
+#result-item.slam{ animation:rank-slam 560ms cubic-bezier(.12,.9,.2,1.06) both; }
+@keyframes rank-slam{
+  0%   { transform:scale(2.0); opacity:0; filter:blur(10px) drop-shadow(0 3px 10px rgba(0,0,0,0.6)); }
+  48%  { transform:scale(0.95); opacity:1; filter:blur(0) drop-shadow(0 3px 10px rgba(0,0,0,0.6)); }
+  100% { transform:scale(1); }
+}
+@media (prefers-reduced-motion: reduce){ #result-item.slam{ animation:none; } }
 
 /* 結果画面の一言。品名より一段落として、読み上げやすい長さに収める */
 #result-note{
   font-family:var(--font-display);
-  font-size:clamp(13px, 2.1vmin, 22px);
+  font-size:clamp(14px, 2.4vmin, 26px);
   line-height:1.75;
   color:var(--brass);
   max-width:min(88vw, 26em);
