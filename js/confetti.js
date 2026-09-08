@@ -148,14 +148,23 @@ window.NV = window.NV || {};
     } catch (e) {}
   }
 
-  // テープを下の両端から打ち上げる。紙片より初速を上げないと «垂れ幕» に見える
+  // テープを撒く。下の両端から打ち上げるだけだと «2本の帯» になって真ん中が空くので、
+  // 3本に1本は上から降らせる。打ち上げ角も広めに散らす
   function pushRibbons(n, colors) {
     for (var i = 0; i < n; i++) {
+      if (i % 3 === 2) {
+        // 上から降ってくる分。画面の中央付近を埋める
+        particles.push(makeRibbon(
+          rand(cssW * 0.08, cssW * 0.92), -rand(20, cssH * 0.45),
+          rand(-90, 90), rand(40, 190), colors));
+        continue;
+      }
       var fromLeft = i % 2 === 0;
-      var ox = fromLeft ? cssW * rand(0.00, 0.16) : cssW * rand(0.84, 1.00);
+      var ox = fromLeft ? cssW * rand(0.00, 0.22) : cssW * rand(0.78, 1.00);
       var oy = cssH * rand(0.94, 1.02);
-      var speed = rand(760, 1240);
-      var vx = (fromLeft ? 1 : -1) * speed * rand(0.42, 0.82);
+      var speed = rand(720, 1260);
+      // 0.25〜1.15 ＝ 鉛直から 14〜49度。狭いと «レーザー» のように筋が揃う
+      var vx = (fromLeft ? 1 : -1) * speed * rand(0.25, 1.15);
       particles.push(makeRibbon(ox, oy, vx, -speed, colors));
     }
   }
