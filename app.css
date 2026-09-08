@@ -45,6 +45,9 @@
   --font-display:"Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN",serif;
   --font-ui:"Noto Sans JP","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
 
+  /* 画面下端のノベルティ帯の高さ。円盤の寸法と #frame の余白がこれを参照する */
+  --ticker-h:clamp(84px, 16vh, 122px);
+
   /* ステージの一辺。円盤はこの 84%（wheel.js の STAGE_FILL）。残りは光と衝撃波の余白 */
   --wheel:min(96vw, 84vh);
   --disc-inset:8%;          /* (1 - 0.84) / 2。円盤の外周までの距離 */
@@ -89,16 +92,95 @@ button{
     linear-gradient(#0F0D0C 0%, #0B0A09 55%, #070605 100%);
 }
 /* 周囲を沈めて盤へ視線を集める。濃さは --vig（app.js が減速に合わせて書く）。
-   回転中は毎フレーム書き換わるので、そのあいだだけトランジションを切る */
-#bg::before{
-  content:"";
-  position:absolute;
+   回転中は毎フレーム書き換わるので、そのあいだだけトランジションを切る。
+   光条（#rays）より手前に置く必要があるので、#bg の擬似要素ではなく独立した要素にしてある */
+#vig{
+  position:fixed;
   inset:0;
+  z-index:0;
+  pointer-events:none;
   background:radial-gradient(58% 52% at 50% 50%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.86) 100%);
   opacity:var(--vig, 0);
   transition:opacity 600ms ease;
 }
-body.tensing #bg::before{ transition:none; }
+body.tensing #vig{ transition:none; }
+
+/* ---------- 背景の光条 ----------
+   回転に合わせて円盤と «逆向き» に回る。速いほど速く、止まると止まる。
+   実装上の要点：要素は 600px 固定で、拡大は transform に任せる。
+   画面いっぱいのサイズにして回すと、ラスタライズ面積が
+   （画面対角）^2 まで膨らんでタブレットが持たない。
+   transform だけならGPU合成で済み、ぼけても光条なので分からない。
+   回転と不透明度は app.js が毎フレーム書く（CSS アニメーションでは速度を追従できない）。
+   【禁止】ここを等級の色で染めないこと。止まる前に答えが漏れる */
+#rays{
+  position:fixed;
+  left:50%;
+  top:50%;
+  width:600px;
+  height:600px;
+  margin:-300px 0 0 -300px;
+  z-index:0;
+  pointer-events:none;
+  opacity:0;
+  transform-origin:50% 50%;
+  will-change:transform, opacity;
+  background:repeating-conic-gradient(from 0deg,
+    rgba(255,214,120,0) 0deg,
+    rgba(255,214,120,0.11) 2.6deg,
+    rgba(255,214,120,0) 7.5deg,
+    rgba(255,214,120,0) 15deg);
+  -webkit-mask-image:radial-gradient(closest-side,
+    rgba(0,0,0,0) 9%, rgba(0,0,0,0.5) 24%, rgba(0,0,0,1) 45%,
+    rgba(0,0,0,0.72) 68%, rgba(0,0,0,0) 84%);
+  mask-image:radial-gradient(closest-side,
+    rgba(0,0,0,0) 9%, rgba(0,0,0,0.5) 24%, rgba(0,0,0,1) 45%,
+    rgba(0,0,0,0.72) 68%, rgba(0,0,0,0) 84%);
+}
+/* 1等の炸裂中だけ。光条を金に変えて外へ抜けさせる */
+#rays.gold{
+  background:repeating-conic-gradient(from 0deg,
+    rgba(255,234,170,0) 0deg,
+    rgba(255,234,170,0.34) 2.2deg,
+    rgba(255,198,88,0.12) 5.2deg,
+    rgba(255,214,120,0) 9deg,
+    rgba(255,214,120,0) 15deg);
+}
+
+/* ---------- 金の粒 ----------
+   待機中にゆっくり昇る。動きが遅いので «高級» に見えて、うるさくならない。
+   中身の <i> は app.js が起動時に一度だけ作る（位置と速さは端末ごとにランダム） */
+#dust{
+  position:fixed;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  overflow:hidden;
+  opacity:0;
+  transition:opacity 900ms ease;
+}
+body[data-state="idle"] #dust,
+body[data-state="spinning"] #dust{ opacity:1; }
+#dust i{
+  position:absolute;
+  left:var(--x);
+  bottom:-8vh;
+  width:var(--sz);
+  height:var(--sz);
+  border-radius:50%;
+  background:radial-gradient(circle,
+    rgba(255,238,196,0.95) 0%, rgba(226,180,90,0.5) 42%, rgba(226,180,90,0) 72%);
+  opacity:0;
+  animation:dust-rise var(--dur) linear var(--delay) infinite;
+  will-change:transform, opacity;
+}
+@keyframes dust-rise{
+  0%   { transform:translate3d(0,0,0) scale(0.6); opacity:0; }
+  14%  { opacity:var(--op); }
+  78%  { opacity:var(--op); }
+  100% { transform:translate3d(var(--drift), -118vh, 0) scale(1.2); opacity:0; }
+}
+@media (prefers-reduced-motion: reduce){ #dust{ display:none; } }
 
 /* 粒状のノイズ。均一なグラデーションはCG然として見えるので、わずかに荒らす */
 #bg::after{
@@ -120,6 +202,9 @@ body.tensing #bg::before{ transition:none; }
   justify-content:center;
   gap:clamp(20px, 4vw, 72px);
   padding:clamp(14px, 2.5vmin, 34px);
+  /* 帯は結果表示中だけ消えるが、余白は消さない。
+     消すと «回転中 → 結果» で盤の大きさが跳ねる */
+  padding-bottom:calc(var(--ticker-h) + clamp(14px, 2.5vmin, 34px));
 }
 body[data-state="idle"] #frame,
 body[data-state="spinning"] #frame,
@@ -133,16 +218,17 @@ body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
 /* 横向き＝円盤と情報を左右に。縦向き＝上下に積む */
 @media (orientation: landscape){
   #frame{ flex-direction:row; }
-  :root{ --wheel:min(55vw, 96vh); }
+  /* 下端の帯のぶんだけ盤を小さくする。引かないと盤が帯に潜り込む */
+  :root{ --wheel:min(55vw, calc(96vh - var(--ticker-h))); }
 }
 @media (orientation: portrait){
   #frame{ flex-direction:column; }
-  /* 縦向きは «盤＋絵＋品名＋一言＋ボタン» を1画面に収める必要がある。
-     盤を欲張ると下がはみ出す */
-  :root{ --wheel:min(92vw, 47vh); }
-}
-@media (orientation: portrait){
-  .plate{ width:clamp(110px, 22vmin, 210px); }
+  /* 縦向きは運用外（Redmi Pad 2 は横向き運用）。崩れないことだけ担保する。
+     帯も細くし、絵と一言を落として品名だけにする */
+  :root{
+    --ticker-h:clamp(46px, 8vh, 62px);
+    --wheel:min(92vw, calc(47vh - var(--ticker-h) * 0.5));
+  }
 }
 
 /* ---------- 円盤 ---------- */
@@ -296,71 +382,108 @@ body.impact #frame{ animation:impact-shake 460ms cubic-bezier(.36,.07,.19,.97) b
   color:var(--ink-dim);
 }
 
-/* 待機中に景品を順に見せる札 */
-#prize-card{
-  display:flex;
-  /* 絵を大きくしたので横並びだと品名の幅が足りず、3行に割れて読みにくい。
-     縦に積んで、品名にパネルの全幅を使わせる */
-  flex-direction:column;
-  align-items:flex-start;
-  gap:clamp(8px, 1.6vmin, 16px);
-  width:100%;
-  opacity:0;
-  transition:opacity 520ms ease;
+/* ---------- 本日のノベルティ（画面下端の帯） ----------
+   もとは «抽選する» の真上に、等級付きの札を4.2秒ごとに差し替えて出していた。
+   タップの瞬間に «1等» が出ていると «次は1等が当たる» と読まれる。
+   途切れず流れ続ける帯にすると «看板» と読めるようになり、その誤読が消える。
+   ここには等級を出さない。等級を言うのは結果画面だけ */
+#ticker{
+  position:fixed;
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:2;
+  height:var(--ticker-h);
+  display:none;
+  align-items:center;
+  background:linear-gradient(180deg, rgba(8,7,6,0.60) 0%, rgba(8,7,6,0.96) 62%);
+  border-top:1px solid rgba(201,162,75,0.38);
+  overflow:hidden;
+  opacity:1;
+  transition:opacity 420ms ease;
+  pointer-events:none;
 }
-@media (orientation: portrait){ #prize-card{ align-items:center; } }
-body[data-state="idle"] #prize-card{ opacity:1; }
-#prize-card.swap{ opacity:0; }
-@media (prefers-reduced-motion: reduce){ #prize-card{ transition:none; } }
+body[data-state="idle"] #ticker,
+body[data-state="spinning"] #ticker{ display:flex; }
+/* 回転中は消さずに沈める。消すと «消えたこと» に気を取られる */
+body[data-state="spinning"] #ticker{ opacity:0.30; }
 
-/* 生成りの台。漆黒と真鍮に対する第三の素材。
-   ここが «足を止める理由» なので、パネルの中で最大の要素にする */
-.plate{
+#ticker-label{
   flex:0 0 auto;
-  width:clamp(130px, 30vmin, 300px);
-  aspect-ratio:1;
+  align-self:stretch;
+  display:flex;
+  align-items:center;
+  padding:0 clamp(12px, 1.8vw, 26px);
+  font-family:var(--font-display);
+  font-size:clamp(11px, 1.6vmin, 16px);
+  letter-spacing:0.22em;
+  text-indent:0.22em;
+  color:var(--brass);
+  white-space:nowrap;
+  border-right:1px solid rgba(201,162,75,0.26);
+}
+
+#ticker-view{
+  flex:1 1 auto;
+  min-width:0;
+  height:100%;
+  overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 3%, #000 95%, transparent 100%);
+  mask-image:linear-gradient(90deg, transparent 0, #000 3%, #000 95%, transparent 100%);
+}
+/* 同じ並びを2回繰り返して入れてあるので、-50% まで動かすと継ぎ目なく巻き戻る。
+   所要時間 --tk-dur は app.js が中身の実寸から決める（速度を一定にするため） */
+#ticker-track{
+  display:flex;
+  align-items:center;
+  height:100%;
+  width:max-content;
+  will-change:transform;
+  animation:tk-scroll var(--tk-dur, 60s) linear infinite;
+}
+@keyframes tk-scroll{
+  from{ transform:translate3d(0, 0, 0); }
+  to  { transform:translate3d(-50%, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce){ #ticker-track{ animation:none; } }
+
+.tk{
+  display:flex;
+  align-items:center;
+  gap:clamp(10px, 1.4vw, 18px);
+  padding:0 clamp(18px, 2.6vw, 42px);
+  white-space:nowrap;
+}
+.tk + .tk{ border-left:1px solid rgba(201,162,75,0.16); }
+/* 生成りの台。漆黒と真鍮に対する第三の素材 */
+.tk-plate{
+  flex:0 0 auto;
+  width:clamp(46px, 9.5vh, 78px);
+  height:clamp(46px, 9.5vh, 78px);
   border-radius:50%;
   background:radial-gradient(circle at 38% 30%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
-  box-shadow:0 10px 26px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.5);
+  box-shadow:0 4px 14px rgba(0,0,0,0.5);
   display:grid;
   place-items:center;
   overflow:hidden;
 }
-.plate img{
-  width:78%;
-  height:78%;
-  object-fit:contain;
-  display:block;
-}
-
-#prize-card .meta{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  min-width:0;
-}
-#prize-card .rank{
+.tk-plate img{ width:80%; height:80%; object-fit:contain; display:block; }
+.tk-txt{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.tk-txt b{
   font-family:var(--font-display);
-  font-size:clamp(12px, 1.9vmin, 17px);
-  letter-spacing:0.3em;
-  color:var(--brass);
-}
-#prize-card .name{
-  font-family:var(--font-display);
-  font-size:clamp(17px, 3vmin, 31px);
-  line-height:1.45;
+  font-weight:700;
+  font-size:clamp(14px, 2.3vmin, 25px);
   color:var(--ink);
-  text-wrap:balance;
-  line-break:strict;
 }
-/* 品目の一言。来場者向けであると同時に、渡すときスタッフが添える一言の台本 */
-#prize-card .note{
-  font-size:clamp(12px, 2vmin, 19px);
-  line-height:1.7;
+.tk-txt i{
+  font-style:normal;
+  font-size:clamp(11px, 1.5vmin, 16px);
   color:var(--ink-dim);
-  text-wrap:balance;
-  line-break:strict;
-  margin-top:2px;
+}
+@media (orientation: portrait){
+  .tk-plate{ display:none; }
+  .tk-txt i{ display:none; }
+  .tk{ padding:0 clamp(14px, 4vw, 26px); }
 }
 
 /* 操作ボタン。丸い飴玉ではなく、真鍮の細い罫で囲った帯にする */
@@ -650,6 +773,36 @@ body.result-peek #btn-reopen{ display:block; }
   transition:opacity 180ms ease;
 }
 
+/* ---------- 画面の縁が燃える ----------
+   画面上でいちばん «大きい» 要素なので、いちばん遠くから見える。
+   等級の差は光の量（--edge-peak）と長さ（--edge-dur）だけで付ける。
+   1等は炸裂と二撃目で2回焚く（app.js） */
+#edge{
+  position:fixed;
+  inset:0;
+  z-index:7;
+  pointer-events:none;
+  opacity:0;
+  --edge-peak:0.6;
+  --edge-dur:900ms;
+  box-shadow:
+    /* 縁のいちばん内側。細く強い金の線 */
+    inset 0 0 clamp(10px, 2vmin, 26px) clamp(2px, 0.5vmin, 7px) rgba(255,244,214,0.95),
+    /* その外側の炎 */
+    inset 0 0 clamp(40px, 9vmin, 120px) clamp(10px, 2.6vmin, 34px) rgba(255,208,110,0.92),
+    /* 画面の奥へ流れ込む赤み */
+    inset 0 0 clamp(150px, 32vmin, 420px) rgba(255,150,44,0.46);
+}
+#edge.on{ animation:edge-burn var(--edge-dur) ease-out; }
+@keyframes edge-burn{
+  0%   { opacity:0; }
+  7%   { opacity:var(--edge-peak); }
+  46%  { opacity:calc(var(--edge-peak) * 0.42); }
+  62%  { opacity:calc(var(--edge-peak) * 0.74); }
+  100% { opacity:0; }
+}
+@media (prefers-reduced-motion: reduce){ #edge.on{ animation:none; } }
+
 #flash{
   position:fixed;
   inset:0;
@@ -692,6 +845,11 @@ body.bright #bg{
 }
 /* 扇の色は canvas 側で塗るので CSS からは触れない。まとめて持ち上げる */
 body.bright #wheel-canvas{ filter:brightness(1.20) saturate(1.05); }
+/* 明るい会場では光り物は «飛ぶ» だけで効かない。帯の地を持ち上げて文字を守る
+   （光条の減光は app.js が不透明度を半分にして行う） */
+body.bright #ticker{
+  background:linear-gradient(180deg, rgba(26,22,19,0.62) 0%, rgba(26,22,19,0.96) 62%);
+}
 /* 幕は薄くしない（文字が読めなくなる）。代わりに中心を少しだけ開ける */
 body.bright #overlay-result{
   background:radial-gradient(90% 70% at 50% 46%, rgba(20,17,14,0.93) 0%, rgba(12,10,8,0.995) 68%);

@@ -23,6 +23,11 @@ window.NV = window.NV || {};
   // 止まってから結果の幕を降ろすまでの «間»。
   // 0 にすると炸裂も衝撃波も幕の裏に隠れて、演出が丸ごと無駄になる
   var RESULT_DELAY_MS = 520;
+  // 1等は «一撃 → 二撃 → 幕» の三段にする。二撃目のぶん幕を遅らせる。
+  // 全部を同じフレームで撃つと «一瞬で終わった» になり、盛り上がりが立ち上がる前に幕が来る
+  var SECOND_WAVE_MS = 300;
+  var RESULT_DELAY_TOP = 880;
+  var secondWaveTimer = null;
   var resultRevealTimer = null;
   // 1等だけ、止まってから «何も起こらない» 時間を挟む。
   // 音も画も完全に止め、上昇音だけを鳴らしてから炸裂させる。
@@ -31,6 +36,12 @@ window.NV = window.NV || {};
   var freezeTimer = null;
 
   var el = {};
+
+  var prefersReducedMotion = false;
+  try {
+    prefersReducedMotion = !!(window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) {}
 
   function cacheEls(){
     el.body = document.body;
@@ -44,11 +55,11 @@ window.NV = window.NV || {};
     el.resultItem = document.getElementById('result-item');
     el.resultNote = document.getElementById('result-note');
     el.btnClose = document.getElementById('btn-close');
-    el.prizeCard = document.getElementById('prize-card');
-    el.prizeImg = document.getElementById('prize-img');
-    el.prizeRank = document.getElementById('prize-rank');
-    el.prizeName = document.getElementById('prize-name');
-    el.prizeNote = document.getElementById('prize-note');
+    el.rays = document.getElementById('rays');
+    el.dust = document.getElementById('dust');
+    el.edge = document.getElementById('edge');
+    el.ticker = document.getElementById('ticker');
+    el.tickerTrack = document.getElementById('ticker-track');
     el.resultPlate = document.getElementById('result-plate');
     el.resultImg = document.getElementById('result-img');
     el.btnReopen = document.getElementById('btn-reopen');
@@ -66,9 +77,10 @@ window.NV = window.NV || {};
     if (el.btnStart) {
       el.btnStart.disabled = (name === 'spinning');
     }
-    // 待機中だけ景品を順に見せる。回転中や結果表示中に裏で切り替わると気が散る
-    if (name === 'idle') { startPrizeRotation(); }
-    else { stopPrizeRotation(); }
+    // 在庫が尽きた品目を帯から外す。作り直すと流れが頭に戻るので、
+    // 並びが変わったときだけ組み直す（buildTicker の中で判定している）
+    if (name === 'idle') { buildTicker(); }
+    syncRays();
   }
 
   function clearAutoAdvance(){
@@ -126,6 +138,8 @@ window.NV = window.NV || {};
       }
     } catch (e) {}
     applyBrightMode();
+    buildDust();
+    updateRayScale();
 
     bindEvents();
     requestWakeLock();
@@ -152,6 +166,7 @@ window.NV = window.NV || {};
     isBusy = false;
     clearResultReveal();
     clearFreeze();
+    clearSecondWave();
     el.body.classList.remove('tensing', 'freeze');
     resetTension();  // CSS のトランジションでゆっくり引く
     // 在庫0になった等級を円盤から外す。停止直後にやると setRanks が
@@ -217,6 +232,11 @@ window.NV = window.NV || {};
         // 最後の数クリックが «無音の中» に落ちることで、続く一撃の落差が最大になる
         onRatchet: function(){
           try { NV.sound.rollStop(); } catch (e) {}
+        },
+        // ニアミス（«惜しい»）。指針が1等の扇に入った歩だけ、高く澄んだ音を足す。
+        // 6割が3等で終わるので、ここが «外れた人» の体験を支える唯一の仕掛けになる
+        onNear: function(){
+          try { NV.sound.nearTick(); } catch (e) {}
         },
         onFrame: feedTension
       });
@@ -307,6 +327,24 @@ window.NV = window.NV || {};
     try { NV.sound.fanfare(rank0); } catch (e) {}
     if (rank0 === 0) { try { NV.sound.applause(2); } catch (e) {} }
     try { wheel.keepGlowing(); } catch (e) {}           // 当たりの扇を脈打たせ続ける
+    edgeBurn(rank0);                                    // 画面の縁が燃える
+    raysHit(rank0 === 0);                               // 背景の光条が外へ抜ける
+
+    // --- 二撃目（1等のみ）---
+    // «まだ終わらない» が盛り上がりの正体。ここで音を重ね直すと団子になるので、
+    // 帯域の空いている高音（shimmer）と、落下の遅い金テープだけを足す
+    clearSecondWave();
+    if (rank0 === 0) {
+      secondWaveTimer = setTimeout(function(){
+        secondWaveTimer = null;
+        try { NV.sound.impact(0.72); } catch (e) {}
+        try { NV.sound.shimmer(); } catch (e) {}
+        impactShake();
+        try { NV.confetti.streamers(30); } catch (e) {}
+        edgeBurn(0, '0.9', '1700ms');
+        setZoom(1.03);
+      }, SECOND_WAVE_MS);
+    }
 
     // 一拍おいてから結果を叩きつける。
     // ここを 0 にすると «止まった瞬間に答えが出る» だけになり、間が消える
@@ -314,7 +352,29 @@ window.NV = window.NV || {};
     resultRevealTimer = setTimeout(function(){
       resultRevealTimer = null;
       showResult(result);
-    }, RESULT_DELAY_MS);
+    }, rank0 === 0 ? RESULT_DELAY_TOP : RESULT_DELAY_MS);
+  }
+
+  function clearSecondWave(){
+    if (secondWaveTimer) { clearTimeout(secondWaveTimer); secondWaveTimer = null; }
+  }
+
+  // ---- ②-5 画面の縁が燃える ----
+  // 画面上でいちばん大きい要素なので、いちばん遠くから見える。
+  // 等級の差は «光の量と長さ» だけで付ける（形は変えない）
+  var EDGE = [
+    { peak: '1',    dur: '1300ms' },   // 1等
+    { peak: '0.52', dur: '900ms'  },   // 2等
+    { peak: '0.30', dur: '620ms'  }    // 3等
+  ];
+  function edgeBurn(rankIndex, peak, dur){
+    if (!el.edge) { return; }
+    var e = EDGE[rankIndex] || EDGE[2];
+    el.edge.style.setProperty('--edge-peak', peak || e.peak);
+    el.edge.style.setProperty('--edge-dur', dur || e.dur);
+    el.edge.classList.remove('on');
+    void el.edge.offsetWidth;
+    el.edge.classList.add('on');
   }
 
   function clearFreeze(){
@@ -346,6 +406,7 @@ window.NV = window.NV || {};
   //    そのまま 1-speed を使うと «いきなり最大まで寄って、すぐ引く» という揺り戻しが出る。
   //    速度が一度上がりきるまでは 0 に張り付かせ、その後は単調増加にする
   function feedTension(speed01){
+    rays.speed = speed01;   // 背景の光条は盤の «いまの速さ» にそのまま追従させる
     if (!tensionArmed) {
       if (speed01 > 0.5) { tensionArmed = true; }
       setTension(0);
@@ -472,57 +533,199 @@ window.NV = window.NV || {};
 
   // 結果表示を一時的にどけているかどうか。円盤の停止位置を見せるためだけの状態で、
   // 抽選の進行（data-state）には影響させない。
-  // ---- A. 待機中に景品を順に見せる ----
-  // 通りがかりの人に「何がもらえるか」を伝えるのが目的。在庫が切れた品目は出さない。
-  var prizeTimer = null;
-  var prizeIndex = 0;
+  // ---- ④ 本日のノベルティ（画面下端を流れる帯） ----
+  //
+  // もとは «抽選する» の真上に、等級付きの札を4.2秒ごとに差し替えて出していた。
+  // タップの瞬間に «1等» が表示されていると «次は1等が当たる» と読まれる。
+  // 途切れず流れ続ける帯にすると «看板» と読めるようになり、その誤読が消える。
+  //
+  // 【禁止】ここに等級を出さないこと。等級を言うのは結果画面だけ。
+  // 在庫が切れた品目は出さない（残数そのものは来場者向け画面には一切出さない）。
 
-  function prizeList(){
+  var tickerSig = '';
+  var tickerMeasureTries = 0;
+  var TICKER_PX_PER_SEC = 58;   // 流れる速さ。品目が増えても速くならないよう実寸から時間を出す
+
+  function noveltyList(){
     var out = [];
     var ranks = (state && state.ranks) || [];
     for (var i = 0; i < ranks.length; i++) {
       var items = ranks[i].items || [];
       for (var j = 0; j < items.length; j++) {
         if (Number(items[j].stock) > 0) {
-          out.push({
-            rank: ranks[i].label, name: items[j].name,
-            image: items[j].image, note: items[j].note
-          });
+          out.push({ name: items[j].name, image: items[j].image, note: items[j].note });
         }
       }
     }
     return out;
   }
 
-  function showPrize(){
-    if (!el.prizeCard) { return; }
-    var list = prizeList();
-    if (!list.length) { el.prizeCard.style.display = 'none'; return; }
-    el.prizeCard.style.display = '';
-    var p = list[prizeIndex % list.length];
-    prizeIndex++;
+  function makeTickerItem(p){
+    var wrap = document.createElement('div');
+    wrap.className = 'tk';
+    if (p.image) {
+      var plate = document.createElement('span');
+      plate.className = 'tk-plate';
+      var img = document.createElement('img');
+      img.src = p.image;
+      img.alt = '';
+      plate.appendChild(img);
+      wrap.appendChild(plate);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'tk-txt';
+    var b = document.createElement('b');
+    b.textContent = p.name;
+    txt.appendChild(b);
+    if (p.note) {
+      var note = document.createElement('i');
+      note.textContent = p.note;
+      txt.appendChild(note);
+    }
+    wrap.appendChild(txt);
+    return wrap;
+  }
 
-    // 一旦フェードアウトしてから差し替える。パッと切り替わると散らかって見える
-    el.prizeCard.classList.add('swap');
-    setTimeout(function(){
-      if (el.prizeRank) { el.prizeRank.textContent = p.rank; }
-      if (el.prizeName) { el.prizeName.textContent = p.name; }
-      if (el.prizeNote) { el.prizeNote.textContent = p.note || ''; }
-      if (el.prizeImg) {
-        if (p.image) { el.prizeImg.src = p.image; el.prizeImg.style.display = ''; }
-        else { el.prizeImg.removeAttribute('src'); el.prizeImg.style.display = 'none'; }
+  function buildTicker(){
+    if (!el.tickerTrack) { return; }
+    var list = noveltyList();
+    var sig = list.map(function(x){ return x.name; }).join('|');
+    // 並びが同じなら作り直さない。作り直すとアニメーションが頭に戻り、帯が «飛ぶ»
+    if (sig === tickerSig) { return; }
+    tickerSig = sig;
+
+    el.tickerTrack.innerHTML = '';
+    if (!list.length) {
+      if (el.ticker) { el.ticker.style.visibility = 'hidden'; }
+      return;
+    }
+    if (el.ticker) { el.ticker.style.visibility = ''; }
+
+    // 同じ並びを2回入れる。-50% まで動かせば継ぎ目なく巻き戻る
+    for (var pass = 0; pass < 2; pass++) {
+      for (var i = 0; i < list.length; i++) {
+        el.tickerTrack.appendChild(makeTickerItem(list[i]));
       }
-      el.prizeCard.classList.remove('swap');
-    }, 420);
+    }
+    tickerMeasureTries = 0;
+    measureTicker();
   }
 
-  function startPrizeRotation(){
-    stopPrizeRotation();
-    showPrize();
-    prizeTimer = setInterval(showPrize, 4200);
+  function measureTicker(){
+    if (!el.tickerTrack || !el.tickerTrack.firstChild) { return; }
+    var half = el.tickerTrack.scrollWidth / 2;
+    if (!(half > 40)) {
+      // 帯が display:none のあいだは実寸が取れない。数フレーム待って測り直す。
+      // 待機画面に一度も入らないまま回り続けないよう、回数で打ち切る
+      if (tickerMeasureTries++ < 120) { requestAnimationFrame(measureTicker); }
+      return;
+    }
+    el.tickerTrack.style.setProperty('--tk-dur',
+      (half / TICKER_PX_PER_SEC).toFixed(1) + 's');
   }
-  function stopPrizeRotation(){
-    if (prizeTimer) { clearInterval(prizeTimer); prizeTimer = null; }
+
+  // ---- ③ 背景の金の粒 ----
+  // 待機中にゆっくり昇る。位置と速さは端末ごとにばらけさせる。
+  // 負の delay を入れて、起動直後から «途中の状態» で散らばらせる
+  var DUST_COUNT = 22;
+  function buildDust(){
+    if (!el.dust || prefersReducedMotion) { return; }
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < DUST_COUNT; i++) {
+      var d = document.createElement('i');
+      d.style.setProperty('--x', (Math.random() * 100).toFixed(2) + '%');
+      d.style.setProperty('--sz', (3 + Math.random() * 6).toFixed(1) + 'px');
+      d.style.setProperty('--dur', (16 + Math.random() * 20).toFixed(1) + 's');
+      d.style.setProperty('--delay', (-Math.random() * 30).toFixed(1) + 's');
+      d.style.setProperty('--drift', ((Math.random() * 2 - 1) * 90).toFixed(0) + 'px');
+      d.style.setProperty('--op', (0.28 + Math.random() * 0.5).toFixed(2));
+      frag.appendChild(d);
+    }
+    el.dust.appendChild(frag);
+  }
+
+  // ---- ③ 背景の光条 ----
+  //
+  // 円盤と «逆向き» に回る。速いほど速く、止まると止まる。
+  // CSS アニメーションでは速度を追従させられない（duration を書き換えると進行が跳ぶ）ので、
+  // 毎フレーム transform を書く。書くのは transform と opacity だけなのでGPU合成で済む。
+  // 要素は 600px 固定で、画面いっぱいへの拡大は scale に任せている（app.css の #rays 参照）。
+  //
+  // 【禁止】等級に応じて色や速度を変えないこと。止まる «前» に答えが漏れる。
+  //         金に変えてよいのは、結果が確定して炸裂したあとだけ。
+  var rays = {
+    angle: 0, op: 0, target: 0, scale: 1,
+    boost: 0,    // 炸裂時の追加角速度[deg/s]
+    grow: 1,     // 炸裂時に外へ広がる倍率
+    speed: 0,    // 円盤の体感速度 0〜1（feedTension が書く）
+    last: 0, raf: null
+  };
+  var RAY_OP = { boot: 0, idle: 0.30, spinning: 0.62, result: 0.16, finished: 0 };
+
+  function updateRayScale(){
+    var w = window.innerWidth || 1024;
+    var h = window.innerHeight || 640;
+    // 画面の対角を覆えば、どの角度に回してもすき間が出ない
+    rays.scale = Math.sqrt(w * w + h * h) / 600 * 1.04;
+  }
+
+  function syncRays(){
+    if (!el.rays) { return; }
+    if (prefersReducedMotion) { el.rays.style.display = 'none'; return; }
+    var name = (el.body && el.body.dataset.state) || 'boot';
+    var v = RAY_OP[name] == null ? 0 : RAY_OP[name];
+    // 明るい会場では光り物は飛ぶだけ。半分に落として文字と盤を守る
+    if (el.body && el.body.classList.contains('bright')) { v *= 0.45; }
+    rays.target = v;
+    if (name !== 'spinning') { rays.speed = 0; }
+    ensureRays();
+  }
+
+  function ensureRays(){
+    if (rays.raf || prefersReducedMotion || !el.rays) { return; }
+    rays.last = 0;
+    rays.raf = requestAnimationFrame(rayStep);
+  }
+
+  function rayStep(ts){
+    var dt = rays.last ? Math.min(0.05, (ts - rays.last) / 1000) : 0.016;
+    rays.last = ts;
+
+    var dps = 2.2 + 150 * rays.speed + rays.boost;
+    rays.angle = (rays.angle - dps * dt) % 360;
+
+    if (rays.boost > 0.5) { rays.boost -= rays.boost * 3.0 * dt; } else { rays.boost = 0; }
+    if (rays.grow > 1.002) { rays.grow -= (rays.grow - 1) * 1.7 * dt; } else { rays.grow = 1; }
+    rays.op += (rays.target - rays.op) * Math.min(1, 2.4 * dt);
+
+    el.rays.style.transform = 'rotate(' + rays.angle.toFixed(2) + 'deg) scale('
+      + (rays.scale * rays.grow).toFixed(3) + ')';
+    el.rays.style.opacity = rays.op.toFixed(3);
+
+    if (rays.target > 0.004 || rays.op > 0.004 || rays.boost > 0 || rays.grow > 1) {
+      rays.raf = requestAnimationFrame(rayStep);
+    } else {
+      rays.raf = null;
+      rays.last = 0;
+      el.rays.style.opacity = '0';
+    }
+  }
+
+  // 停止の瞬間。光条を一気に加速させ、外へ広げて抜く
+  function raysHit(isTop){
+    if (!el.rays || prefersReducedMotion) { return; }
+    rays.boost = isTop ? 900 : 300;
+    rays.grow = isTop ? 1.75 : 1.20;
+    rays.op = isTop ? 1 : 0.85;
+    rays.target = isTop ? 0.95 : 0.70;
+    if (isTop) {
+      el.rays.classList.add('gold');
+      setTimeout(function(){
+        if (el.rays) { el.rays.classList.remove('gold'); }
+      }, 2400);
+    }
+    setTimeout(syncRays, isTop ? 1500 : 600);
+    ensureRays();
   }
 
   // 品目IDから品目そのものを引く（結果表示の絵と一言に使う）
@@ -594,6 +797,7 @@ window.NV = window.NV || {};
     try {
       el.body.classList.toggle('bright', !!(state.settings && state.settings.brightMode));
     } catch (e) {}
+    syncRays();
   }
 
   function onSettingsSaved(nextState){
@@ -665,6 +869,10 @@ window.NV = window.NV || {};
     resizeDebounceTimer = setTimeout(function(){
       resizeDebounceTimer = null;
       try { wheel.resize(); } catch (e) {}
+      updateRayScale();
+      // 帯の余白は clamp で画面幅に連動する。実寸が変われば所要時間も測り直す
+      tickerMeasureTries = 0;
+      measureTicker();
     }, 100);
   }
 

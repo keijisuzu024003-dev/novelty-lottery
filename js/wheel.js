@@ -321,6 +321,9 @@ window.NV = window.NV || {};
     this._blinkOn = false;
     this._blinkAcc = 0;
     this._winSeg = null;   // 停止後に光らせる扇
+    this._topRankId = null; // 最上位等級のID。ニアミス（«惜しい»）の判定に使う
+    this._nearT = null;    // ニアミスの開始時刻。null なら光っていない
+    this._nearSeg = null;  // かすめた最上位等級の扇
     this._speed01 = 0;     // 0〜1 の体感速度。残像・光量・ラベルの濃さを全部これで決める
     this._dRot = 0;        // 直近1フレームの回転量[rad]。モーションブラーの幅そのもの
     this._flareT = null;   // 停止時の炸裂の開始時刻。null なら炸裂していない
@@ -338,6 +341,10 @@ window.NV = window.NV || {};
   Wheel.prototype.setRanks = function (ranks) {
     this._winSeg = null; // 扇を作り直すので前回の当たりの参照は捨てる
     this._pendingWin = null;
+    this._nearT = null;
+    this._nearSeg = null;
+    // ranks[0] が最上位（1等）。app.js の findRankIndex と同じ «配列順＝等級順» の約束に乗る
+    this._topRankId = (ranks && ranks[0] && ranks[0].id) || null;
     try {
       this.segments = buildSegments(ranks);
     } catch (e) {
@@ -368,6 +375,16 @@ window.NV = window.NV || {};
 
   Wheel.prototype._pointerAngle = function () {
     return ((-this.rotation % TAU) + TAU) % TAU;
+  };
+
+  // 指定の回転量のとき、12時の指針が指している扇を返す
+  Wheel.prototype._segmentAt = function (rotation) {
+    var a = ((-rotation % TAU) + TAU) % TAU;
+    for (var i = 0; i < this.segments.length; i++) {
+      var s = this.segments[i];
+      if (a >= s.start && a < s.end) return s;
+    }
+    return null;
   };
 
   // rankId のセグメントの中から1つ選び、そこに止まるための回転計画を作る（純粋計算・状態は変えない）
@@ -433,9 +450,14 @@ window.NV = window.NV || {};
       // 動きは緩やかに伸ばし、溜めは二乗で伸ばす。«溜めの伸び» が緊張の正体。
       // ただし最後の溜めだけは短くする。ここを伸ばすと «最終クリック → 炸裂» が間延びする
       var moveMs = 95 + (suspense ? 95 : 85) * p;
+      // 1等だけ、最後の2歩を寝かせる。«あと1コマ» を目で追える速さまで落とす。
+      // 溜めを伸ばすのとは別物で、こちらは «動いている最中» が遅い
+      if (suspense && i >= count - 2) moveMs *= 2.3;
       var holdMs = last
         ? RATCHET_TAIL_MS
         : (suspense ? 25 : 20) + (suspense ? 480 : 300) * p * p;
+      // 最終クリックの直前だけ、はっきり «止める»。二乗の伸びに任せると 392ms で足りない
+      if (suspense && i === count - 2) holdMs = 600;
       stops.push({ rot: start + (i + 1) * step, at: acc, dur: moveMs, fired: false });
       acc += moveMs + holdMs;
     }
@@ -452,6 +474,8 @@ window.NV = window.NV || {};
     var onRatchet = typeof opts.onRatchet === "function" ? opts.onRatchet : function () {};
     // 毎フレームの速度。画面の寄りとビネットに使う
     var onFrame = typeof opts.onFrame === "function" ? opts.onFrame : function () {};
+    // ラチェット中に最上位等級の扇をかすめた（＝惜しい）瞬間
+    var onNear = typeof opts.onNear === "function" ? opts.onNear : function () {};
     // 炸裂を保留する（1等：止まってから «間» を置いて外から burst() で起こす）
     var holdFlare = !!opts.holdFlare;
     var self = this;
@@ -471,6 +495,8 @@ window.NV = window.NV || {};
         self._winSeg = null; // 前回の当たりの光を消す
         self._flareT = null; // 前回の炸裂も消す（残っていると回り始めに白く光る）
         self._pendingWin = null;
+        self._nearT = null;
+        self._nearSeg = null;
         self.isSpinning = true;
         self._spin = {
           startTs: null,
@@ -492,9 +518,12 @@ window.NV = window.NV || {};
           rat: rat,
           holdFlare: holdFlare,
           ratchetFired: false,
+          nearArmed: false,  // ニアミス判定に入ったか（入った最初のフレームでは発火させない）
+          prevFocus: null,   // 直前に指針の下にあった扇。同じ扇で連続発火させない
           onTick: onTick,
           onRatchet: onRatchet,
           onFrame: onFrame,
+          onNear: onNear,
           resolve: resolve
         };
         self._ensureLoop();
@@ -563,14 +592,15 @@ window.NV = window.NV || {};
       if (this._idle) {
         this.rotation += IDLE_SPEED * dt;
         try { this.render(); } catch (e) { /* 描画失敗は無視して継続 */ }
-      } else if (glowing || this._flareT != null) {
+      } else if (glowing || this._flareT != null || this._nearT != null) {
         try { this.render(); } catch (e) {}
       }
     }
 
     // 静止中はrAFを止めてCPU/バッテリーを食わないようにする
     // （_flareT は render の中で炸裂が終わると null に戻る）
-    if (this.isSpinning || this._idle || glowing || this._flareT != null) {
+    if (this.isSpinning || this._idle || glowing
+        || this._flareT != null || this._nearT != null) {
       this._raf = requestAnimationFrame(function (t) { self._loop(t); });
     } else {
       this._raf = null;
@@ -588,6 +618,8 @@ window.NV = window.NV || {};
     this.rotation = sp.endRotation;
     this.isSpinning = false;
     this._spin = null;
+    this._nearT = null;
+    this._nearSeg = null;
     this._dRot = 0;
     this._speed01 = 0;
     this._omega = 0;
@@ -613,6 +645,7 @@ window.NV = window.NV || {};
     var elapsed = ts - sp.startTs;
     var prevRotation = this.rotation;
     var fired = [];
+    var nearFired = false;
     var tickSpeed = 0;
     var done = false;
 
@@ -670,11 +703,37 @@ window.NV = window.NV || {};
     this._omega = Math.abs(this._dRot) / Math.max(1e-4, this._dt);
     this._speed01 = clamp(this._omega / PEAK_OMEGA, 0, 1);
 
+    // ---- ニアミス（«惜しい»）----
+    // 十分に減速してから、指針が最上位等級の扇へ «入った» 瞬間だけ光らせる。
+    // 6割が3等で終わるこのアプリでは、これが唯一 «外れた人» の体験を底上げできる手。
+    //
+    // ラチェットの中だけで判定してはいけない。ラチェットの移動幅は 5歩×5°＝25° しかなく、
+    // 扇1枚（18〜37°）より狭い。実測で 3等で止まる回の発火は平均 0.18 回しかなかった。
+    // 滑走の終盤まで広げると、止まるまでの残り 150〜190° で1〜2回かすめる。
+    //
+    // 停止位置そのもの（sp.segment）では出さない。当たりの白熱と混ざって読めなくなる。
+    if (this._topRankId && this._speed01 < NEAR_SPEED) {
+      var focus = this._segmentAt(this.rotation);
+      if (!sp.nearArmed) {
+        // 判定に入った最初のフレーム。すでに中にいる扇で誤発火させない
+        sp.nearArmed = true;
+        sp.prevFocus = focus;
+      } else if (focus !== sp.prevFocus) {
+        if (focus && focus !== sp.segment && focus.rankId === this._topRankId) {
+          this._nearSeg = focus;
+          this._nearT = Date.now();
+          nearFired = true;
+        }
+        sp.prevFocus = focus;
+      }
+    }
+
     for (var f = 0; f < fired.length; f++) {
       try {
         sp.onTick(fired[f].speed, fired[f].i >= 0 ? fired[f] : null);
       } catch (e2) { /* onTick側の例外で抽選演出を止めない */ }
     }
+    if (nearFired) { try { sp.onNear(); } catch (e6) {} }
     try { sp.onFrame(this._speed01); } catch (e5) {}
 
     try { this.render(); } catch (e3) { /* 描画失敗は無視して継続 */ }
@@ -776,6 +835,7 @@ window.NV = window.NV || {};
     if (this.isSpinning || this._pendingWin) {
       this._drawPointerFocus(ctx, radius, this.isSpinning ? speed : 0);
     }
+    if (this._nearT != null) this._drawNearMiss(ctx, radius, outer);
     if (this._winSeg && !this.isSpinning) this._drawWinGlow(ctx, radius);
     this._drawRing(ctx, radius, outer, speed);
 
@@ -898,6 +958,55 @@ window.NV = window.NV || {};
     ctx.globalCompositeOperation = "lighter";
     ctx.fillStyle = "rgba(255,246,222," + (0.20 * t * t).toFixed(3) + ")";
     ctx.fill();
+    ctx.restore();
+  };
+
+  // ニアミス。ラチェット中に最上位等級の扇をかすめたときだけ、その扇を金で焼く。
+  // «いま1等の上を通った» が見えると、外れても «惜しかった» が残る。
+  // 確率には一切触れていない。単に現在位置を強調しているだけ。
+  var NEAR_MS = 380;
+  // ニアミスを出し始める体感速度。0.20 ＝ およそ 380°/s。
+  // これ以上速いと «金色に光った» と分かる前に扇が通り過ぎる
+  var NEAR_SPEED = 0.20;
+
+  Wheel.prototype._drawNearMiss = function (ctx, radius, outer) {
+    var seg = this._nearSeg;
+    if (!seg) { this._nearT = null; return; }
+    var p = (Date.now() - this._nearT) / NEAR_MS;
+    if (!(p >= 0)) p = 0;
+    if (p >= 1) { this._nearT = null; this._nearSeg = null; return; }
+    var inv = 1 - p;
+    var a0 = seg.start + this.rotation - Math.PI / 2;
+    var a1 = seg.end + this.rotation - Math.PI / 2;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    // 扇そのものを金で満たす。白ではなく金にするのは、
+    // 停止時の «白熱» と見分けが付かなくなるのを避けるため。
+    //
+    // 加算合成 (lighter) だけでは «青を引く» ことができない。
+    // 1等の扇は紫（#7A5AA6）なので、金を足しても青が残ってピンクになる。
+    // 先に不透明の金を薄く敷いて下地の紫を殺してから、加算で焼く。
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, radius, a0, a1, false);
+    ctx.closePath();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(214,158,52," + (0.72 * inv).toFixed(3) + ")";
+    ctx.fill();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = "rgba(255,196,74," + (0.40 * inv * inv).toFixed(3) + ")";
+    ctx.fill();
+
+    // 外周の帯を太らせて外へ抜ける。遠目にはこちらの方が読める
+    var band = outer - radius;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius + band / 2, a0, a1, false);
+    ctx.lineWidth = band * (1.1 + 1.8 * p);
+    ctx.strokeStyle = "rgba(255,238,182," + (0.80 * inv).toFixed(3) + ")";
+    ctx.stroke();
+
     ctx.restore();
   };
 

@@ -15,6 +15,19 @@
   <!-- 背景。漆器の面に見立てた、ごく浅い縦のグラデーションだけ -->
   <div id="bg" aria-hidden="true"></div>
 
+  <!-- 背景の光条。円盤と逆向きにゆっくり回る。app.js が毎フレーム transform を書く。
+       固定 600px を transform で拡大しているのは、画面サイズの要素をそのまま回すと
+       ラスタライズ面積が跳ね上がってタブレットが持たないため。
+       ここを等級の色で染めてはいけない（止まる前に答えが漏れる） -->
+  <div id="rays" aria-hidden="true"></div>
+
+  <!-- 待機中にゆっくり昇る金の粒。中身は app.js が起動時に一度だけ作る -->
+  <div id="dust" aria-hidden="true"></div>
+
+  <!-- 周囲を沈めて盤へ視線を集める。濃さは --vig（app.js が減速に合わせて書く）。
+       光条より «手前» に無いと光条が沈まないので、必ず光条の後に置くこと -->
+  <div id="vig" aria-hidden="true"></div>
+
   <!-- 画面全体の骨格。横向きは 円盤｜情報 の二段組、縦向きは上下に積む -->
   <div id="frame">
 
@@ -34,18 +47,17 @@
         <div id="eyebrow">プライベート展示会 2026</div>
       </div>
 
-      <!-- 待機中に景品を順に見せる。何がもらえるかを通りがかりに伝えるのが目的 -->
-      <div id="prize-card" aria-hidden="true">
-        <div class="plate"><img id="prize-img" alt=""></div>
-        <div class="meta">
-          <span id="prize-rank" class="rank"></span>
-          <span id="prize-name" class="name"></span>
-          <span id="prize-note" class="note"></span>
-        </div>
-      </div>
-
       <button id="btn-start" type="button"><span>抽選する</span></button>
     </div>
+  </div>
+
+  <!-- 本日のノベルティ。画面下端を右から左へ流し続ける。
+       «抽選する» の真上に等級付きで置くと «次はこれが当たる» と読まれるので、
+       ここには等級を一切出さない。等級を言うのは結果画面だけ。
+       中身は app.js が在庫のある品目から組み立てる -->
+  <div id="ticker" aria-hidden="true">
+    <div id="ticker-label">本日のノベルティ</div>
+    <div id="ticker-view"><div id="ticker-track"></div></div>
   </div>
 
   <!-- 起動直後。Android の自動再生ポリシー対策で、最初のタップで音声を初期化する -->
@@ -81,6 +93,10 @@
 
   <!-- 紙吹雪専用キャンバス。最前面かつクリックを奪わないよう pointer-events:none -->
   <canvas id="confetti-canvas"></canvas>
+
+  <!-- 画面の縁が金色に燃える。画面上でいちばん大きい要素＝いちばん遠くから見える。
+       等級の差は «光の量と長さ» で付ける（app.js が --edge-peak / --edge-dur を書く） -->
+  <div id="edge" aria-hidden="true"></div>
 
   <!-- 1等演出用のフラッシュ -->
   <div id="flash" aria-hidden="true"></div>

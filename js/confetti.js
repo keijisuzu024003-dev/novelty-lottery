@@ -61,9 +61,10 @@ window.NV = window.NV || {};
 
   // ---- パーティクル生成 ---------------------------------------------------
 
-  // 1個ぶんのパーティクルを作る。原点(x,y)から速度(vx,vy)で発射。
+  // 1個ぶんの紙片を作る。原点(x,y)から速度(vx,vy)で発射。
   function makeParticle(x, y, vx, vy, colors) {
     return {
+      kind: 0,                // 0=紙片
       x: x, y: y, vx: vx, vy: vy,
       w: rand(6, 11),
       h: rand(10, 16),
@@ -76,8 +77,29 @@ window.NV = window.NV || {};
     };
   }
 
+  // 金テープ1本。紙片との違いは «長い・軽い・ゆっくり落ちる・くねる» の4点。
+  // 落下が遅いぶん画面に長く残り、枚数の割に «多い» と感じる。
+  function makeRibbon(x, y, vx, vy, colors) {
+    return {
+      kind: 1,                // 1=テープ
+      x: x, y: y, vx: vx, vy: vy,
+      w: rand(4.5, 8),        // 帯の太さ
+      h: rand(95, 195),       // 帯の長さ。短いと «小枝» になる
+      wave: rand(10, 22),     // くねりの振幅[px]。実際の振幅は速度で割り引く（drawRibbon）
+      color: pick(colors),
+      angle: 0,               // 毎フレーム «飛んでいる向き» から作り直す
+      tilt: rand(-0.3, 0.3),  // 向きに対する固定のずれ
+      spin: rand(1.6, 3.2),   // くねりの速さ(rad/sec)
+      spinPhase: rand(0, Math.PI * 2),
+      life: 0,
+      maxLife: rand(4.2, 6.2)
+    };
+  }
+
   // レベルごとの個数上限。Androidタブレットで60fpsを割らないための目安値。
-  var LEVEL_COUNT = { 1: 380, 2: 220, 3: 120 };
+  // 1等はテープを混ぜるぶん紙片を減らす。総描画量を増やさずに «濃く» する
+  var LEVEL_COUNT = { 1: 320, 2: 210, 3: 120 };
+  var LEVEL_RIBBONS = { 1: 34, 2: 12, 3: 0 };
   var LEVEL_COLORS = { 1: GOLD, 2: RED, 3: BLUE };
   // burst の多重呼び出しでパーティクル総数が暴走しないための絶対上限
   var HARD_CAP = 760;
@@ -118,6 +140,33 @@ window.NV = window.NV || {};
         particles.push(makeParticle(rx, ry, rvx, rvy, colors));
       }
 
+      // 金テープ
+      var rib = LEVEL_RIBBONS[level] || 0;
+      if (rib > 0) pushRibbons(Math.min(rib, HARD_CAP - particles.length), colors);
+
+      startLoop();
+    } catch (e) {}
+  }
+
+  // テープを下の両端から打ち上げる。紙片より初速を上げないと «垂れ幕» に見える
+  function pushRibbons(n, colors) {
+    for (var i = 0; i < n; i++) {
+      var fromLeft = i % 2 === 0;
+      var ox = fromLeft ? cssW * rand(0.00, 0.16) : cssW * rand(0.84, 1.00);
+      var oy = cssH * rand(0.94, 1.02);
+      var speed = rand(760, 1240);
+      var vx = (fromLeft ? 1 : -1) * speed * rand(0.42, 0.82);
+      particles.push(makeRibbon(ox, oy, vx, -speed, colors));
+    }
+  }
+
+  // 二撃目のテープだけを撃つ（1等の三段炸裂で使う）。紙片は足さない
+  function streamers(n) {
+    try {
+      if (!canvas || !cx) return;
+      var room = HARD_CAP - particles.length;
+      if (room <= 0) return;
+      pushRibbons(Math.min(n || 24, room), GOLD);
       startLoop();
     } catch (e) {}
   }
@@ -157,17 +206,32 @@ window.NV = window.NV || {};
         var p = particles[i];
         p.life += dt;
 
-        // 空気抵抗（速度に比例した減速）＋重力
-        p.vx -= p.vx * DRAG * dt;
-        p.vy -= p.vy * DRAG * dt;
-        p.vy += GRAVITY * dt;
+        // 空気抵抗（速度に比例した減速）＋重力。
+        // テープは面積が大きく軽いので、抵抗を強く・重力を弱くする
+        // テープは面積が大きく軽い。ただし抵抗を効かせすぎると空中で止まって «貼り付く»
+        var drag = p.kind === 1 ? DRAG * 1.25 : DRAG;
+        var grav = p.kind === 1 ? GRAVITY * 0.55 : GRAVITY;
+        p.vx -= p.vx * drag * dt;
+        p.vy -= p.vy * drag * dt;
+        p.vy += grav * dt;
 
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.angle += p.spin * dt;
-        p.spinPhase += p.spin * dt * 1.3;
+        p.spinPhase += p.spin * dt * (p.kind === 1 ? 1 : 1.3);
+        if (p.kind === 1) {
+          // くねりに合わせて横へ流す。まっすぐ落ちると «棒» に見える
+          p.x += Math.sin(p.spinPhase) * 34 * dt;
+          // 長辺を «飛んでいる向き» に沿わせる。打ち上げ中は軌跡に沿って伸び、
+          // 落下に移ると自然に垂れ下がる。これが無いと空中で向きが散らかって小枝に見える
+          var sp2 = Math.abs(p.vx) + Math.abs(p.vy);
+          if (sp2 > 30) { p.angle = Math.atan2(p.vy, p.vx) - Math.PI / 2 + p.tilt; }
+        } else {
+          p.angle += p.spin * dt;
+        }
 
-        var offscreen = p.y > cssH + 40 || p.x < -60 || p.x > cssW + 60 || p.life > p.maxLife;
+        var margin = p.kind === 1 ? 140 : 40;
+        var offscreen = p.y > cssH + margin || p.x < -160 || p.x > cssW + 160
+          || p.life > p.maxLife;
         if (!offscreen) {
           drawParticle(p);
           alive.push(p);
@@ -188,8 +252,40 @@ window.NV = window.NV || {};
     }
   }
 
-  // 紙片1枚を描く。自転で幅が潰れる表現(scale(1,cos))を入れ、ただの矩形回転に見せない。
   function drawParticle(p) {
+    if (p.kind === 1) { drawRibbon(p); return; }
+    drawChip(p);
+  }
+
+  // 金テープ1本。sin でくねらせた折れ線を太く描く。
+  // 単なる細長い矩形にすると «棒» になり、テープに見えない
+  function drawRibbon(p) {
+    var seg = 9;
+    var half = p.h / 2;
+    // 打ち上げ中は張力で真っ直ぐ伸び、落下に移るとカールする。
+    // 速度で割り引かないと、落ちてもずっと «棒» のままになる
+    var v = Math.abs(p.vx) + Math.abs(p.vy);
+    var curl = p.wave * Math.min(1, 320 / (v + 60));
+    cx.save();
+    cx.translate(p.x, p.y);
+    cx.rotate(p.angle + Math.sin(p.spinPhase) * 0.22);
+    cx.strokeStyle = p.color;
+    cx.lineWidth = p.w;
+    cx.lineJoin = "round";
+    cx.beginPath();
+    for (var i = 0; i <= seg; i++) {
+      var u = i / seg;
+      var y = -half + p.h * u;
+      // 帯1本ぶんで «1波弱» 曲げる。分割数を増やしてあるので折れずに S 字になる
+      var x = Math.sin(p.spinPhase + u * 3.3) * curl;
+      if (i === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
+    }
+    cx.stroke();
+    cx.restore();
+  }
+
+  // 紙片1枚を描く。自転で幅が潰れる表現(scale(1,cos))を入れ、ただの矩形回転に見せない。
+  function drawChip(p) {
     var squash = Math.cos(p.spinPhase); // -1..1
     cx.save();
     cx.translate(p.x, p.y);
@@ -203,6 +299,7 @@ window.NV = window.NV || {};
   window.NV.confetti = {
     attach: attach,
     burst: burst,
+    streamers: streamers,
     stop: stop
   };
 })();

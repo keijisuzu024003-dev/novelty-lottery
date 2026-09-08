@@ -498,6 +498,59 @@ window.NV = window.NV || {};
     } catch (e) {}
   }
 
+  // ニアミス。ラチェット中に1等の扇をかすめた瞬間に鳴らす。
+  // ラチェットのカチ（620Hz〜の矩形波）より «高く・澄んだ» 音にしないと、
+  // 同じ音の連続に埋もれて «かすめた» ことが伝わらない。
+  // 音量はカチ（0.26）より控えめにする。主役はあくまでカチの列
+  function nearTick() {
+    try {
+      if (unusable()) return;
+      var t = now();
+      // 高い純音を2本。倍音関係（1:2.5）にして «鈴» の色にする
+      var partials = [[1976, 0.16], [4940, 0.055]];
+      for (var k = 0; k < partials.length; k++) {
+        var osc = ctx.createOscillator();
+        var g = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(partials[k][0], t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(partials[k][1], t + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(t);
+        osc.stop(t + 0.46);
+        cleanupOnEnded(osc, [g]);
+      }
+    } catch (e) {}
+  }
+
+  // 二撃目に重ねるきらめき。上へ駆け上がる4音。
+  // ここで拍手やファンファーレを重ね直すと «団子» になるので、
+  // 帯域が空いている高音だけを足す
+  function shimmer() {
+    try {
+      if (unusable()) return;
+      var t = now();
+      var seq = [1046.5, 1318.5, 1568.0, 2093.0];
+      for (var i = 0; i < seq.length; i++) {
+        var osc = ctx.createOscillator();
+        var g = ctx.createGain();
+        var at = t + i * 0.055;
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(seq[i], at);
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.13, at + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.54);
+        cleanupOnEnded(osc, [g]);
+      }
+    } catch (e) {}
+  }
+
   // 1等の «時間が止まる» 間に鳴らす上昇音。
   // 無音のまま止めると事故に見えるので、何かが来ることだけを伝える。
   // 終端で切れる（フェードアウトしない）ので、次に来る一撃が際立つ。
@@ -595,6 +648,8 @@ window.NV = window.NV || {};
     tick: tick,
     impact: impact,
     ratchetTick: ratchetTick,
+    nearTick: nearTick,
+    shimmer: shimmer,
     riser: riser,
     whoosh: whoosh,
     rollStart: rollStart,
