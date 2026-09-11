@@ -99,6 +99,7 @@ window.NV = window.NV || {};
         autoAdvanceSec: 0,
         // "choose" = 来場者が品目を選ぶ／"auto" = アプリが在庫比例で決める（混雑時の逃げ道）
         itemPick: "choose",
+        pickFix: 2,     // storage.js の PICK_FIX と揃える
         // 選択の制限時間[秒]。0 でオフ。時間切れは在庫が最も多い品目を自動で選ぶ
         chooseSec: 0,
         brightMode: false,

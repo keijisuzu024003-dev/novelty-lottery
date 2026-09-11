@@ -10,6 +10,13 @@ window.NV = window.NV || {};
 
   var KEY = "novelty-lottery-v1";
 
+  // 「品目の選び方」を一度だけ立て直した印。
+  // 選択機能を入れた版で、旧値を誤って "auto"（＝選ばせない）へ寄せてしまった。
+  // その版で1回でも抽選した端末には "auto" が実際に保存されており、
+  // 寄せ先を直しただけでは戻らない。この印が無い保存データは既定へ戻す。
+  // 【上げるのは、同じ種類の «保存値そのものが誤っている» 事故のときだけ】
+  var PICK_FIX = 2;
+
   function pad(n, len) {
     var s = String(Math.max(0, Math.floor(n)));
     while (s.length < len) s = "0" + s;
@@ -113,14 +120,21 @@ window.NV = window.NV || {};
     // 【"auto" に寄せないこと】旧値はスタッフが «選ばせない» と決めた印ではなく、
     // 選択機能そのものが無かった時代の既定値でしかない。auto に寄せると、
     // 以前このアプリを開いた端末では保存データを読み直すたびに選択画面が
-    // 丸ごと素通りされる（盤に特賞は出るので «更新済みなのに選べない» に見える。実際に踏んだ）
-    if (s.itemPick === "auto") {
+    // 丸ごと素通りされる（盤に特賞は出るので «更新済みなのに選べない» に見える。実際に踏んだ）。
+    //
+    // さらに、"auto" を «スタッフがそう決めた» と読めるのは、設定画面に
+    // この項目が現れてからの話。それ以前の保存データに入っている "auto" は
+    // 上の誤りが書き残したものでしかないので、印が無ければ一度だけ既定へ戻す
+    if (toNum(s.pickFix) !== PICK_FIX) {
+      out.itemPick = defSettings.itemPick;
+    } else if (s.itemPick === "auto") {
       out.itemPick = "auto";
     } else if (s.itemPick === "choose" || s.itemPick === "even" || s.itemPick === "stock-weighted") {
       out.itemPick = "choose";
     } else {
       out.itemPick = defSettings.itemPick;
     }
+    out.pickFix = PICK_FIX;
 
     // 選択の制限時間[秒]。0 でオフ
     var chooseNum = toNum(s.chooseSec);
@@ -209,7 +223,16 @@ window.NV = window.NV || {};
       } catch (e2) {
         return window.NV.defaults.makeState();
       }
-      return sanitizeState(parsed);
+      var st = sanitizeState(parsed);
+
+      // 立て直しが起きたなら、その場で書き戻す。
+      // 書き戻さないと印が残らず、スタッフが «自動で選ぶ» にしても
+      // 次に開いたときにまた戻されてしまう
+      try {
+        var mark = (parsed && parsed.settings) ? Number(parsed.settings.pickFix) : NaN;
+        if (mark !== PICK_FIX) { save(st); }
+      } catch (e4) {}
+      return st;
     } catch (e3) {
       // 何が起きても白画面にはしない。
       return window.NV.defaults.makeState();
