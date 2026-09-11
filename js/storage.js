@@ -108,12 +108,16 @@ window.NV = window.NV || {};
     var autoNum = toNum(s.autoAdvanceSec);
     out.autoAdvanceSec = isFinite(autoNum) ? Math.max(0, Math.floor(autoNum)) : defSettings.autoAdvanceSec;
 
-    // 旧値（even / stock-weighted）は «自動で選ぶ» に寄せる。
-    // 選ぶのが来場者になったので、均等か在庫比例かの区別は意味を失った
-    if (s.itemPick === "choose") {
-      out.itemPick = "choose";
-    } else if (s.itemPick === "auto" || s.itemPick === "even" || s.itemPick === "stock-weighted") {
+    // 旧値（even / stock-weighted）は «来場者が選ぶ» に寄せる。
+    // 選ぶのが来場者になったので、均等か在庫比例かの区別は意味を失った。
+    // 【"auto" に寄せないこと】旧値はスタッフが «選ばせない» と決めた印ではなく、
+    // 選択機能そのものが無かった時代の既定値でしかない。auto に寄せると、
+    // 以前このアプリを開いた端末では保存データを読み直すたびに選択画面が
+    // 丸ごと素通りされる（盤に特賞は出るので «更新済みなのに選べない» に見える。実際に踏んだ）
+    if (s.itemPick === "auto") {
       out.itemPick = "auto";
+    } else if (s.itemPick === "choose" || s.itemPick === "even" || s.itemPick === "stock-weighted") {
+      out.itemPick = "choose";
     } else {
       out.itemPick = defSettings.itemPick;
     }

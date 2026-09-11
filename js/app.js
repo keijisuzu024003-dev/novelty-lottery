@@ -559,6 +559,13 @@ window.NV = window.NV || {};
     return n;
   }
 
+  // いま選べる品目の種類数
+  function chooseCount(){
+    if (!round) { return 0; }
+    try { return (NV.lottery.selectableItems(state, round.rankId) || []).length; }
+    catch (e) { return 0; }
+  }
+
   function showChoose(){
     if (!round) { goIdleOrFinished(); return; }
     setPeek(false);
@@ -571,6 +578,11 @@ window.NV = window.NV || {};
     // 混雑時の逃げ道：スタッフが «自動で選ぶ» にしていたらアプリが決める
     var auto = !!(state.settings && state.settings.itemPick === 'auto');
     if (auto) { autoPickRest(); return; }
+
+    // 選ぶものが1種類しかないなら、選ばせない。
+    // 3等は品目が1つ＝来場者の6割がここに来る。そのまま出すと «選択» の形だけが残り、
+    // 選びようのない画面を1タップ挟むことになる。品切れが進むと1等・2等も同じ形になる
+    if (chooseCount() <= 1) { autoPickRest(); return; }
 
     renderChoose();
     setState('choosing');
@@ -707,6 +719,9 @@ window.NV = window.NV || {};
       finishRound();
       return;
     }
+    // 残り1種類になったら、もう選びようがない。残りは自動で取る
+    if (chooseCount() <= 1) { clearChooseTimer(); autoPickRest(); return; }
+
     renderChoose();
     startChooseTimer();
   }
