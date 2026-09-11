@@ -48,6 +48,8 @@
       </div>
 
       <button id="btn-start" type="button"><span>抽選する</span></button>
+      <!-- 特賞の扇は幅3.6°で文字が入らない。何を狙う盤なのかは、ここでしか伝えられない -->
+      <p id="hint">金の一本に止まれば<b>特賞</b></p>
     </div>
   </div>
 
@@ -77,10 +79,32 @@
       <div id="result-item"></div>
       <!-- 品目の一言。渡すときスタッフが読み上げる «台本» も兼ねる -->
       <div id="result-note"></div>
+      <!-- 特賞で複数個のときだけ使う。1品を大きく見せる形が成立しないため -->
+      <div id="result-list"></div>
       <div id="result-actions">
         <button id="btn-close" type="button">円盤を見る</button>
         <button id="btn-next" type="button"><span>次の人へ</span></button>
       </div>
+    </div>
+  </div>
+
+  <!-- 特賞。ここでは品目を出さず、«もう一度回す» だけを見せる -->
+  <div id="overlay-jackpot">
+    <div class="jp-inner">
+      <div class="jp-mark">特賞</div>
+      <p class="jp-lead">ノベルティが<b>1〜3個</b>もらえます</p>
+      <button id="btn-bonus" type="button"><span>もう一度回す</span></button>
+    </div>
+  </div>
+
+  <!-- 品目の選択。在庫のあるものだけが並ぶ（残数は出さない） -->
+  <div id="overlay-choose">
+    <div class="ch-inner">
+      <div id="choose-head"></div>
+      <div id="choose-sub"></div>
+      <div id="choose-grid"></div>
+      <!-- 制限時間を設定したときだけ動く帯。既定はオフで幅0のまま -->
+      <div id="choose-timer"><span id="choose-bar"></span></div>
     </div>
   </div>
 

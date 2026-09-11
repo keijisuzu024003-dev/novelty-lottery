@@ -72,7 +72,13 @@ window.NV = window.NV || {};
       }
     }
 
-    return { id: id, label: label, color: color, colorDark: colorDark, weight: weight, items: items };
+    var rank = { id: id, label: label, color: color, colorDark: colorDark,
+                 weight: weight, items: items };
+    // 特賞まわりの目印。ここで落とすと «全等級から選ぶ» も «盤に出す» も効かなくなる
+    if (raw.jackpot === true) { rank.jackpot = true; }
+    if (raw.noStock === true) { rank.noStock = true; }
+    if (raw.top === true) { rank.top = true; }
+    return rank;
   }
 
   function sanitizeHistoryEntry(raw) {
@@ -86,7 +92,9 @@ window.NV = window.NV || {};
       rankId: raw.rankId,
       rankLabel: (typeof raw.rankLabel === "string") ? raw.rankLabel : "",
       itemId: raw.itemId,
-      itemName: (typeof raw.itemName === "string") ? raw.itemName : ""
+      itemName: (typeof raw.itemName === "string") ? raw.itemName : "",
+      // 備考。特賞のときだけ「特賞 2/3」のように入る（CSV の5列目）
+      note: (typeof raw.note === "string") ? raw.note : ""
     };
   }
 
@@ -100,7 +108,20 @@ window.NV = window.NV || {};
     var autoNum = toNum(s.autoAdvanceSec);
     out.autoAdvanceSec = isFinite(autoNum) ? Math.max(0, Math.floor(autoNum)) : defSettings.autoAdvanceSec;
 
-    out.itemPick = (s.itemPick === "even" || s.itemPick === "stock-weighted") ? s.itemPick : defSettings.itemPick;
+    // 旧値（even / stock-weighted）は «自動で選ぶ» に寄せる。
+    // 選ぶのが来場者になったので、均等か在庫比例かの区別は意味を失った
+    if (s.itemPick === "choose") {
+      out.itemPick = "choose";
+    } else if (s.itemPick === "auto" || s.itemPick === "even" || s.itemPick === "stock-weighted") {
+      out.itemPick = "auto";
+    } else {
+      out.itemPick = defSettings.itemPick;
+    }
+
+    // 選択の制限時間[秒]。0 でオフ
+    var chooseNum = toNum(s.chooseSec);
+    out.chooseSec = isFinite(chooseNum) ? Math.max(0, Math.floor(chooseNum))
+                                        : (defSettings.chooseSec || 0);
 
     // 会場モード（明るいホール向けに全体を一段明るく）。
     // ここに追記し忘れると、設定してもリロードで戻る
@@ -139,6 +160,20 @@ window.NV = window.NV || {};
         var h = sanitizeHistoryEntry(raw.history[j]);
         if (h) history.push(h);
       }
+    }
+
+    // 特賞を持たない古い state / 会場データを読み込んだときは、既定の特賞を足す。
+    // 足さないと «金の一本» が盤から消えたまま当日を迎えることになる
+    var hasJackpot = false;
+    for (var k = 0; k < ranks.length; k++) {
+      if (ranks[k] && ranks[k].jackpot) { hasJackpot = true; break; }
+    }
+    if (!hasJackpot) {
+      var defJ = null;
+      for (var m = 0; m < def.ranks.length; m++) {
+        if (def.ranks[m].jackpot) { defJ = def.ranks[m]; break; }
+      }
+      if (defJ) { ranks.unshift(defJ); }
     }
 
     var settings = sanitizeSettings(raw.settings, def.settings);
@@ -274,13 +309,16 @@ window.NV = window.NV || {};
   function exportCSV(state, venue) {
     try {
       var history = (state && Array.isArray(state.history)) ? state.history : [];
-      var rows = [["日時", "会場", "等級", "品目"]];
+      // 5列目の「備考」は特賞のときだけ埋まる（「特賞 2/3」など）。
+      // 既存の4列は動かさないので、Excel 側の集計はそのまま使える
+      var rows = [["日時", "会場", "等級", "品目", "備考"]];
 
       for (var i = 0; i < history.length; i++) {
         var h = history[i];
         if (!h) continue;
         if (venue && h.venue !== venue) continue;
-        rows.push([formatDateTime(h.ts), h.venue || "", h.rankLabel || "", h.itemName || ""]);
+        rows.push([formatDateTime(h.ts), h.venue || "", h.rankLabel || "",
+                   h.itemName || "", h.note || ""]);
       }
 
       var lines = [];

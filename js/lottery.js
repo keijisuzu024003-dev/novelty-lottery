@@ -40,14 +40,69 @@ window.NV = window.NV || {};
     return sum;
   }
 
+  // 特賞かどうか。特賞は自前の在庫を持たず、全等級の品目から選ばせる。
+  function isJackpot(rank) {
+    return !!(rank && rank.jackpot);
+  }
+
   // 在庫が残っている等級だけを返す（抽選候補）。
+  // 特賞は自前の在庫が 0 でも、全体に在庫がある限り候補に残す（noStock）。
   function availableRanks(state) {
+    var ranks = state ? asArray(state.ranks) : [];
+    var total = totalStock(state);
+    var out = [];
+    for (var i = 0; i < ranks.length; i++) {
+      var r = ranks[i];
+      if (!r) continue;
+      if (r.noStock || isJackpot(r)) {
+        if (total > 0) out.push(r);
+      } else if (rankStock(r) > 0) {
+        out.push(r);
+      }
+    }
+    return out;
+  }
+
+  // 在庫のある品目を全等級から集める（特賞の選択肢）。
+  function allItemsInStock(state) {
     var ranks = state ? asArray(state.ranks) : [];
     var out = [];
     for (var i = 0; i < ranks.length; i++) {
-      if (rankStock(ranks[i]) > 0) out.push(ranks[i]);
+      var items = asArray(ranks[i] && ranks[i].items);
+      for (var j = 0; j < items.length; j++) {
+        if (items[j] && toNum(items[j].stock) > 0) out.push(items[j]);
+      }
     }
     return out;
+  }
+
+  // rankId で選べる品目。特賞なら全等級から、通常の等級ならその等級から。
+  // 在庫0の品目は返さない（＝選択画面に出ない。残数そのものは出さない）。
+  function selectableItems(state, rankId) {
+    var ranks = state ? asArray(state.ranks) : [];
+    var rank = null;
+    for (var i = 0; i < ranks.length; i++) {
+      if (ranks[i] && ranks[i].id === rankId) { rank = ranks[i]; break; }
+    }
+    if (!rank) return [];
+    if (isJackpot(rank)) return allItemsInStock(state);
+    return asArray(rank.items).filter(function (it) {
+      return it && toNum(it.stock) > 0;
+    });
+  }
+
+  // 品目IDから品目とその等級を引く（等級をまたいで探す。特賞のため）。
+  function findItem(state, itemId) {
+    var ranks = state ? asArray(state.ranks) : [];
+    for (var i = 0; i < ranks.length; i++) {
+      var items = asArray(ranks[i] && ranks[i].items);
+      for (var j = 0; j < items.length; j++) {
+        if (items[j] && items[j].id === itemId) {
+          return { rank: ranks[i], item: items[j] };
+        }
+      }
+    }
+    return null;
   }
 
   // 在庫0の等級を除外し、残った等級の weight を候補内合計で正規化した実効確率。
@@ -125,64 +180,61 @@ window.NV = window.NV || {};
     }, random);
     if (!chosenRank) return null;
 
-    var items = asArray(chosenRank.items).filter(function (it) {
-      return it && toNum(it.stock) > 0;
-    });
-    if (items.length === 0) {
-      // rankStock > 0 のはずなので通常来ないが、念のためのガード。
-      return null;
-    }
-
-    var itemPick = state && state.settings && state.settings.itemPick === "even" ? "even" : "stock-weighted";
-    var chosenItem;
-    if (itemPick === "even") {
-      chosenItem = pickByWeight(items, function () { return 1; }, random);
-    } else {
-      chosenItem = pickByWeight(items, function (it) { return toNum(it.stock); }, random);
-    }
-    if (!chosenItem) return null;
+    // 品目はここでは決めない。選ぶのは来場者（設定で «自動で選ぶ» にしたときは pickItem）。
+    // 選択肢が1つも無い等級は返さない（通常は availableRanks で弾かれている）
+    if (selectableItems(state, chosenRank.id).length === 0) return null;
 
     return {
       rankId: chosenRank.id,
       rankLabel: chosenRank.label,
-      itemId: chosenItem.id,
-      itemName: chosenItem.name
+      jackpot: isJackpot(chosenRank)
     };
   }
 
-  // draw() の結果を確定させる。在庫を1減らし history に追記する。
-  // 在庫が既に無い（0以下）場合は何もせず false を返す。
-  function commit(state, result) {
-    if (!state || !result) return false;
-    var ranks = asArray(state.ranks);
-    var rank = null;
-    for (var i = 0; i < ranks.length; i++) {
-      if (ranks[i] && ranks[i].id === result.rankId) { rank = ranks[i]; break; }
-    }
-    if (!rank) return false;
+  // 「自動で選ぶ」設定のときに、アプリが代わりに品目を決める。
+  // 在庫に比例させると在庫の多い品目から捌けて、結果的に均等に減る。
+  function pickItem(state, rankId, rng) {
+    var random = typeof rng === "function" ? rng : Math.random;
+    var items = selectableItems(state, rankId);
+    if (items.length === 0) return null;
+    return pickByWeight(items, function (it) { return toNum(it.stock); }, random);
+  }
 
-    var items = asArray(rank.items);
-    var item = null;
-    for (var j = 0; j < items.length; j++) {
-      if (items[j] && items[j].id === result.itemId) { item = items[j]; break; }
-    }
-    if (!item) return false;
+  // 選ばれた品目を1つ確定する。在庫を1減らし history に1行追記する。
+  //
+  // 【この関数が配りすぎを止めている】在庫が 0 以下なら何もせず false を返す。
+  // 特賞で複数個取れるようになっても、1個ずつここを通す限り総配布数は総在庫を超えない。
+  //
+  // note は履歴の備考（CSV の5列目）。特賞のときだけ「特賞 2/3」のように入る。
+  // 等級は «実際に渡した品目が属する等級» で記録する。
+  // 特賞で1等の品を選んだ場合、等級欄は「1等」・備考が「特賞 1/3」になる。
+  function commitItem(state, itemId, note) {
+    if (!state || !itemId) return false;
+    var found = findItem(state, itemId);
+    if (!found) return false;
 
-    var stock = toNum(item.stock);
+    var stock = toNum(found.item.stock);
     if (stock <= 0) return false; // 在庫を1未満にしない
 
-    item.stock = stock - 1;
+    found.item.stock = stock - 1;
 
     if (!Array.isArray(state.history)) state.history = [];
     state.history.push({
       ts: Date.now(),
       venue: state.venue,
-      rankId: rank.id,
-      rankLabel: rank.label,
-      itemId: item.id,
-      itemName: item.name
+      rankId: found.rank.id,
+      rankLabel: found.rank.label,
+      itemId: found.item.id,
+      itemName: found.item.name,
+      note: (typeof note === "string") ? note : ""
     });
     return true;
+  }
+
+  // 旧シグネチャ。{ itemId, note } を渡せば動く（rankId は見ない）。
+  function commit(state, result) {
+    if (!state || !result) return false;
+    return commitItem(state, result.itemId, result.note);
   }
 
   // 総在庫が0かどうか。
@@ -195,7 +247,12 @@ window.NV = window.NV || {};
     totalStock: totalStock,
     availableRanks: availableRanks,
     effectiveWeights: effectiveWeights,
+    isJackpot: isJackpot,
+    selectableItems: selectableItems,
+    findItem: findItem,
     draw: draw,
+    pickItem: pickItem,
+    commitItem: commitItem,
     commit: commit,
     isFinished: isFinished
   };

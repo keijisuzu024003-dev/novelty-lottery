@@ -208,12 +208,20 @@ body[data-state="spinning"] #dust{ opacity:1; }
 }
 body[data-state="idle"] #frame,
 body[data-state="spinning"] #frame,
+body[data-state="jackpot"] #frame,
+body[data-state="choosing"] #frame,
 body[data-state="result"] #frame{ display:flex; }
-/* 結果表示中は円盤だけを残す。操作パネルが幕越しに透けると出しっぱなしに見える */
-body[data-state="result"] #panel{ visibility:hidden; }
-/* 円盤も中央へ寄せて、結果の文字と軸を合わせる */
-body[data-state="result"] #frame{ justify-content:center; }
-body[data-state="result"] #panel{ position:absolute; pointer-events:none; }
+/* 幕が降りているあいだは円盤だけを残す。操作パネルが透けると出しっぱなしに見える */
+body[data-state="result"] #panel,
+body[data-state="jackpot"] #panel,
+body[data-state="choosing"] #panel{ visibility:hidden; }
+/* 円盤も中央へ寄せて、幕の文字と軸を合わせる */
+body[data-state="result"] #frame,
+body[data-state="jackpot"] #frame,
+body[data-state="choosing"] #frame{ justify-content:center; }
+body[data-state="result"] #panel,
+body[data-state="jackpot"] #panel,
+body[data-state="choosing"] #panel{ position:absolute; pointer-events:none; }
 
 /* 横向き＝円盤と情報を左右に。縦向き＝上下に積む */
 @media (orientation: landscape){
@@ -540,9 +548,23 @@ body[data-state="idle"] #btn-start::after{
 #btn-start:disabled::after{ display:none; }
 #btn-start span{ position:relative; z-index:1; }
 
+/* 盤の特賞は幅3.6°で文字が入らない。«金の細い線が何なのか» はここでしか伝えられない */
+#hint{
+  margin:0;
+  align-self:stretch;
+  text-align:center;
+  font-family:var(--font-display);
+  font-size:clamp(12px, 1.9vmin, 19px);
+  letter-spacing:0.16em;
+  color:var(--ink-dim);
+}
+#hint b{ color:var(--brass-hi); font-weight:700; }
+body[data-state="spinning"] #hint{ opacity:0.35; }
+
 /* ---------- オーバーレイ共通 ---------- */
 
-#overlay-boot,#overlay-result,#overlay-finished{
+#overlay-boot,#overlay-result,#overlay-finished,
+#overlay-jackpot,#overlay-choose{
   display:none;
   position:fixed;
   inset:0;
@@ -554,6 +576,8 @@ body[data-state="idle"] #btn-start::after{
 }
 body[data-state="boot"] #overlay-boot{ display:flex; }
 body[data-state="result"] #overlay-result{ display:flex; }
+body[data-state="jackpot"] #overlay-jackpot{ display:flex; }
+body[data-state="choosing"] #overlay-choose{ display:flex; }
 body[data-state="finished"] #overlay-finished{ display:flex; }
 
 #overlay-boot{
@@ -820,6 +844,220 @@ body.result-peek #btn-reopen{ display:block; }
 }
 @media (prefers-reduced-motion: reduce){ #flash.on{ animation:none; } }
 
+/* ---------- 特賞の幕 ---------- */
+/*
+   ここでは品目を一切出さない。«特賞が出た» ことと «もう一度回せる» ことだけを伝える。
+   品目まで同じ画面に出すと、いちばん盛り上がる一瞬に読むものが増えて熱が逃げる。
+*/
+#overlay-jackpot{
+  background:radial-gradient(85% 65% at 50% 44%, rgba(38,28,6,0.94) 0%, rgba(6,5,4,0.995) 70%);
+}
+.jp-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:clamp(14px, 3vmin, 34px);
+  max-width:min(92vw, 900px);
+}
+.jp-mark{
+  font-family:var(--font-display);
+  font-size:clamp(56px, 15vmin, 190px);
+  line-height:1;
+  letter-spacing:0.1em;
+  text-indent:0.1em;
+  background:linear-gradient(176deg, #FFF6DC 0%, #F2C230 44%, #C9A24B 62%, #8A6A12 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  filter:drop-shadow(0 0 clamp(18px, 4vmin, 54px) rgba(242,194,48,0.55));
+  animation:jp-in 620ms cubic-bezier(.2,.9,.25,1.05) both;
+}
+@keyframes jp-in{
+  0%   { transform:scale(2.1); opacity:0; filter:blur(14px); }
+  70%  { transform:scale(0.96); opacity:1; filter:blur(0); }
+  100% { transform:scale(1); opacity:1; }
+}
+@media (prefers-reduced-motion: reduce){ .jp-mark{ animation:none; } }
+.jp-lead{
+  margin:0;
+  font-family:var(--font-display);
+  font-size:clamp(16px, 3vmin, 34px);
+  letter-spacing:0.12em;
+  color:var(--ink);
+}
+.jp-lead b{ color:var(--brass-hi); font-weight:700; }
+
+#btn-bonus{
+  min-height:clamp(62px, 9vmin, 96px);
+  padding:0 clamp(28px, 5vw, 68px);
+  border:1px solid var(--brass-hi);
+  border-radius:2px;
+  background:linear-gradient(178deg, #F4E2B4 0%, #D9B463 42%, #C9A24B 62%, #A8842F 100%);
+  color:#1A1409;
+  font-family:var(--font-display);
+  font-size:clamp(19px, 3.2vmin, 34px);
+  letter-spacing:0.3em;
+  text-indent:0.3em;
+  cursor:pointer;
+  box-shadow:0 6px 26px rgba(201,162,75,0.42);
+}
+#btn-bonus:active:not(:disabled){ filter:brightness(0.88); box-shadow:none; }
+#btn-bonus:disabled{ filter:grayscale(0.5) brightness(0.7); cursor:not-allowed; }
+
+/* ---------- 品目の選択 ---------- */
+/*
+   在庫のある品目だけを並べる。残数は出さない（来場者向け画面の鉄則）。
+   在庫が減って選択肢が1つになる日が必ず来るので、1枚でも間の抜けない形にしてある。
+*/
+#overlay-choose{
+  background:radial-gradient(90% 70% at 50% 46%, rgba(11,10,9,0.94) 0%, rgba(6,5,4,0.995) 68%);
+}
+.ch-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:clamp(8px, 1.8vmin, 20px);
+  max-width:min(96vw, 1180px);
+  width:100%;
+}
+#choose-head{
+  font-family:var(--font-display);
+  font-size:clamp(18px, 3.4vmin, 38px);
+  letter-spacing:0.28em;
+  text-indent:0.28em;
+  color:var(--brass-hi);
+}
+#choose-sub{
+  font-family:var(--font-display);
+  font-size:clamp(13px, 2.1vmin, 22px);
+  letter-spacing:0.1em;
+  color:var(--ink-dim);
+}
+#choose-grid{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:stretch;
+  justify-content:center;
+  gap:clamp(8px, 1.6vw, 20px);
+  width:100%;
+  margin-top:clamp(4px, 1vmin, 12px);
+}
+/* 炸裂直後は指がまだ動いている。ほんの一瞬だけ触らせない */
+#choose-grid.arming{ pointer-events:none; opacity:0.55; }
+
+.cc{
+  flex:0 1 clamp(126px, 17vw, 208px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:clamp(5px, 1vmin, 11px);
+  padding:clamp(9px, 1.6vmin, 18px) clamp(6px, 1vmin, 12px);
+  border:1px solid #4A4232;
+  border-radius:2px;
+  background:linear-gradient(#191614, #100E0C);
+  cursor:pointer;
+  transition:border-color 140ms ease, background 140ms ease, transform 120ms ease;
+}
+.cc:active{ transform:scale(0.97); border-color:var(--brass-hi); }
+.cc:focus-visible{ outline:2px solid var(--brass-hi); outline-offset:2px; }
+.cc-plate{
+  width:clamp(72px, 11vw, 132px);
+  aspect-ratio:1;
+  border-radius:50%;
+  background:radial-gradient(circle at 38% 30%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
+  box-shadow:0 6px 18px rgba(0,0,0,0.55);
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+.cc-plate img{ width:80%; height:80%; object-fit:contain; display:block; }
+.cc b{
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:clamp(12px, 1.8vmin, 20px);
+  line-height:1.4;
+  color:var(--ink);
+  text-wrap:balance;
+  line-break:strict;
+}
+.cc i{
+  font-style:normal;
+  font-size:clamp(10px, 1.35vmin, 15px);
+  line-height:1.55;
+  color:var(--ink-dim);
+  text-wrap:balance;
+  line-break:strict;
+}
+/* 4枚以上（特賞）は一言を落として、絵と品名に幅を渡す */
+#choose-grid.dense .cc i{ display:none; }
+@media (orientation: portrait){
+  .cc i{ display:none; }
+  .cc{ flex:0 1 clamp(110px, 28vw, 190px); }
+}
+
+/* 制限時間の帯。設定していないときは幅0のまま動かない */
+#choose-timer{
+  width:min(70vw, 520px);
+  height:3px;
+  background:rgba(201,162,75,0.16);
+  margin-top:clamp(4px, 1vmin, 12px);
+}
+#choose-bar{
+  display:block;
+  width:0%;
+  height:100%;
+  background:var(--brass);
+}
+
+/* ---------- 複数個の結果 ---------- */
+/* 特賞で2個以上のとき。1品を大きく見せる形は成立しないので、小さく並べる */
+body.multi #result-plate{ display:none; }
+#result-list{ display:none; }
+body.multi #result-list{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:clamp(6px, 1.2vmin, 14px);
+  margin-top:clamp(4px, 1vmin, 12px);
+  min-width:min(80vw, 520px);
+}
+.rl{
+  display:flex;
+  align-items:center;
+  gap:clamp(10px, 1.6vw, 20px);
+  padding:clamp(6px, 1vmin, 12px) clamp(10px, 1.6vw, 20px);
+  border:1px solid #3A342B;
+  background:rgba(20,17,14,0.7);
+  text-align:left;
+}
+.rl-plate{
+  flex:0 0 auto;
+  width:clamp(44px, 6.5vmin, 72px);
+  aspect-ratio:1;
+  border-radius:50%;
+  background:radial-gradient(circle at 38% 30%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+.rl-plate img{ width:80%; height:80%; object-fit:contain; display:block; }
+.rl b{
+  flex:1 1 auto;
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:clamp(13px, 2.1vmin, 24px);
+  line-height:1.4;
+  color:var(--ink);
+}
+/* 同じ品目をまとめたときの個数 */
+.rl em{
+  flex:0 0 auto;
+  font-style:normal;
+  font-family:var(--font-display);
+  font-size:clamp(15px, 2.5vmin, 28px);
+  color:var(--brass-hi);
+}
+
 /* ---------- 会場モード ---------- */
 /*
    展示会のホールは明るく、11型のグレア画面は鏡になる。
@@ -851,9 +1089,14 @@ body.bright #ticker{
   background:linear-gradient(180deg, rgba(26,22,19,0.62) 0%, rgba(26,22,19,0.96) 62%);
 }
 /* 幕は薄くしない（文字が読めなくなる）。代わりに中心を少しだけ開ける */
-body.bright #overlay-result{
+body.bright #overlay-result,
+body.bright #overlay-choose{
   background:radial-gradient(90% 70% at 50% 46%, rgba(20,17,14,0.93) 0%, rgba(12,10,8,0.995) 68%);
 }
+body.bright #overlay-jackpot{
+  background:radial-gradient(85% 65% at 50% 44%, rgba(52,40,12,0.94) 0%, rgba(14,11,9,0.995) 70%);
+}
+body.bright .cc{ background:linear-gradient(#241F1A, #191512); border-color:#5E5340; }
 
 /* ---------- スタッフ用 ---------- */
 

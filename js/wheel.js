@@ -114,132 +114,20 @@ window.NV = window.NV || {};
 
   // ---- セグメント生成 ----
   //
-  // 等級を «複数の扇» に割って円周に散らす。面積の合計は確率どおりのまま。
+  // 等級1つにつき扇1枚。幅＝その等級の確率そのもの。
   //
-  //   3等 62% を1枚（223°）で置くと、盤の6割が同じ色になり
-  //   回す前から「まあ3等だろう」が伝わってしまう。
-  //   5枚（各45°）に割って1等・2等を間に挟むと、面積は1ミリも変えずに
-  //   «1等の扇が円周上に2か所ある» 盤になる。1周ごとに1等の近くを通る回数が増え、
-  //   終盤のラチェットで «次の扇に入るか» の瀬戸際が生まれる。
+  // 以前は等級を複数枚に割って円周へ散らしていた（3等62%を1枚223°で置くと
+  // 盤の6割が同じ色になり «まあ3等だろう» が回す前に伝わるため）。
+  // 特賞（幅3.6°）を入れたことで «盤で狙う一点» がそちらへ移ったので、1枚に戻した。
+  // 緊張は «どの等級に入るか» ではなく «あの金の線に入るか» で作る。
   //
-  // 一時期1枚にまとめていたのは «等級名の向きが上下でバラバラ» という理由だけで、
-  // 今は文字を盤と一緒に回さず常に水平に描いている（_drawLabel）。割っても向きは揃う。
+  // 並びは 1等 → 特賞 → 2等 → 3等。特賞を1等の隣に置くと «高い側の一角» として
+  // ひとまとまりに見え、指針がそこを通り抜けるあいだ緊張が途切れない。
   //
-  // 在庫0の等級は円盤から外して残りで正規化する。外さないと
+  // 特賞は自前の在庫を持たない（noStock）。全体に在庫がある限り盤に残す。
+  // 在庫0の «普通の» 等級は盤から外して残りで正規化する。外さないと
   // 「絶対に止まらない大きな扇」が残り、見ている人に不自然に映るため。
   // 例外を投げない：ranks が空 / weight が全部0以下でも必ず何か返す。
-
-  var TARGET_PIECES = 10;   // 円周に置きたい扇の枚数の目安
-  var MIN_PIECE_DEG = 13;   // これより細くは割らない（MIN_LABEL_DEG を割ると等級名が消える）
-  var MAX_PIECES = 14;      // 枚数の上限。増やしすぎると1枚が細くなり等級名が読めない
-
-  // 正規化した重みから、等級ごとの分割数を決める
-  function splitCounts(norm) {
-    var n = norm.length;
-    var counts = [];
-    var cap = [];          // 幅の下限から決まる、その等級を割れる上限
-    var total = 0;
-    var i;
-    for (i = 0; i < n; i++) {
-      cap.push(Math.max(1, Math.floor((norm[i] * 360) / MIN_PIECE_DEG)));
-      var want = Math.max(1, Math.round(norm[i] * TARGET_PIECES));
-      // 幅が許すなら最低2枚。1枚のままだと «円周に散らす» 意味が無くなる。
-      // 割りたいのはむしろ 1等 のような少数派で、そこが1枚だと near-miss が増えない
-      var c = Math.min(cap[i], Math.max(2, want));
-      counts.push(c);
-      total += c;
-    }
-    // 円環で同じ色を隣り合わせないためには、最多の等級が全体の半分以下である必要がある。
-    // 崩れているときは、まず «他を増やす»。多数派を削ると1枚あたりが太くなってしまう
-    for (var guard = 0; guard < 60; guard++) {
-      var mi = 0;
-      for (i = 1; i < n; i++) { if (counts[i] > counts[mi]) mi = i; }
-      if (counts[mi] * 2 <= total) break;
-
-      var raised = -1;
-      for (i = 0; i < n; i++) {
-        if (i === mi) continue;
-        if (counts[i] >= cap[i] || counts[i] >= counts[mi]) continue;
-        if (raised < 0 || counts[i] < counts[raised]) raised = i;
-      }
-      if (raised >= 0 && total < MAX_PIECES) {
-        counts[raised] += 1;
-        total += 1;
-      } else if (counts[mi] > 1) {
-        counts[mi] -= 1;
-        total -= 1;
-      } else {
-        break;   // 等級が1つしかない等。隣接は interleave 側で許容する
-      }
-    }
-    return counts;
-  }
-
-  // 同じ等級が隣り合わないように並べる。円環なので先頭と末尾も見る。
-  //
-  // «1つ飛ばしで敷き詰める» のが基本。最多が全体の半分以下なら必ず成立する。
-  // ただし «等級ごとにまとめて» 敷き詰めると、1等の2枚が円周の一角に固まる。
-  // 1枚ずつ持ち回りで敷き詰めると散るが、枚数が拮抗していると隣接が出ることがある。
-  // そこで両方作り、散る方を優先しつつ、成立している方を採る。
-  function interleave(counts) {
-    var n = counts.length;
-    var total = 0, i;
-    for (i = 0; i < n; i++) total += counts[i];
-    if (total <= 0) return [];
-
-    var idx = [];
-    for (i = 0; i < n; i++) { if (counts[i] > 0) idx.push(i); }
-    idx.sort(function (a, b) { return counts[b] - counts[a]; });
-    if (idx.length <= 1) {
-      var solo = [];
-      for (i = 0; i < total; i++) solo.push(idx.length ? idx[0] : 0);
-      return solo;
-    }
-
-    // 1つ飛ばしに敷き詰める（偶数番地を埋め切ったら奇数番地へ）
-    function lay(seq) {
-      var order = new Array(total);
-      var pos = 0;
-      for (var k = 0; k < seq.length; k++) {
-        order[pos] = seq[k];
-        pos += 2;
-        if (pos >= total) pos = 1;
-      }
-      for (var j = 0; j < total; j++) { if (order[j] == null) order[j] = seq[0]; }
-      return order;
-    }
-    function ok(order) {
-      for (var j = 0; j < order.length; j++) {
-        if (order[j] === order[(j + 1) % order.length]) return false;
-      }
-      return true;
-    }
-
-    var head = idx[0];
-    var left, k2, q;
-
-    // A案：最多を先に、残りは «1枚ずつ持ち回り»。1等が散る
-    left = counts.slice();
-    var spread = [];
-    for (k2 = 0; k2 < counts[head]; k2++) spread.push(head);
-    left[head] = 0;
-    for (var guard = 0; guard < 1000; guard++) {
-      var placed = false;
-      for (q = 1; q < idx.length; q++) {
-        if (left[idx[q]] > 0) { spread.push(idx[q]); left[idx[q]]--; placed = true; }
-      }
-      if (!placed) break;
-    }
-    var a = lay(spread);
-    if (ok(a)) return a;
-
-    // B案：等級ごとにまとめて敷き詰める。散らないが、最多が半分以下なら必ず成立する
-    var grouped = [];
-    for (q = 0; q < idx.length; q++) {
-      for (k2 = 0; k2 < counts[idx[q]]; k2++) grouped.push(idx[q]);
-    }
-    return lay(grouped);
-  }
 
   function buildSegments(ranks) {
     var list = [];
@@ -264,37 +152,60 @@ window.NV = window.NV || {};
       return n;
     }
 
-    // 在庫のある等級だけを円盤に載せる。全滅していたら見た目維持のため全部載せる
-    var live = list.filter(function (r) { return stockOf(r) > 0; });
-    var soldOutAll = live.length === 0;
-    if (soldOutAll) live = list;
+    var total = 0;
+    for (var t = 0; t < list.length; t++) total += stockOf(list[t]);
 
-    var weights = live.map(function (r) {
+    // 在庫のある等級だけを盤に載せる。特賞は自前の在庫を持たないので常に残す。
+    //
+    // 在庫切れ表示（くすませる）にするのは «在庫を持つ等級があるのに全滅した» ときだけ。
+    // 「全部 noStock なら在庫0だから在庫切れ」と単純に判定すると、
+    // ボーナス盤（1個/2個/3個。どれも在庫を持たない）が丸ごとくすむ
+    var hasStockRank = false;
+    for (var h = 0; h < list.length; h++) {
+      if (!list[h].noStock) { hasStockRank = true; break; }
+    }
+
+    var live;
+    var soldOutAll = false;
+    if (hasStockRank && total <= 0) {
+      live = list;
+      soldOutAll = true;
+    } else {
+      live = list.filter(function (r) {
+        return r.noStock || stockOf(r) > 0;
+      });
+      if (live.length === 0) { live = list; soldOutAll = true; }
+    }
+
+    // 特賞を «最初の普通の等級» のすぐ後ろへ移す（＝1等の隣）
+    var order = live.slice();
+    for (var a = 0; a < order.length; a++) {
+      if (order[a].jackpot) {
+        var j = order.splice(a, 1)[0];
+        order.splice(Math.min(1, order.length), 0, j);
+        break;
+      }
+    }
+
+    var weights = order.map(function (r) {
       var w = Number(r.weight);
       return (isFinite(w) && w > 0) ? w : 0;
     });
     var totalW = weights.reduce(function (x, y) { return x + y; }, 0);
     if (totalW <= 0) {
-      weights = live.map(function () { return 1; });
-      totalW = live.length;
+      weights = order.map(function () { return 1; });
+      totalW = order.length;
     }
-
-    var norm = weights.map(function (w) { return w / totalW; });
-    var counts = splitCounts(norm);
-    var order = interleave(counts);
-    // 1枚あたりの角度。counts で割っているので、等級ごとの «合計» は確率どおりのまま
-    var per = norm.map(function (w, i) { return (w * TAU) / counts[i]; });
 
     var segments = [];
     var cursor = 0;
     for (var k = 0; k < order.length; k++) {
-      var ri = order[k];
-      var rad = per[ri];
+      var rad = (weights[k] / totalW) * TAU;
       // 端数の積み残しで最後に隙間が出ないよう、最後の1枚は残り全部にする
       if (k === order.length - 1) rad = TAU - cursor;
       segments.push({
-        rankId: live[ri].id,
-        rank: live[ri],
+        rankId: order[k].id,
+        rank: order[k],
         soldOut: soldOutAll,
         start: cursor,
         end: cursor + rad
@@ -338,13 +249,23 @@ window.NV = window.NV || {};
     }
   }
 
-  Wheel.prototype.setRanks = function (ranks) {
+  // opts.nearTarget … ニアミス（«惜しい»）で光らせる等級のID。null で無効。
+  //   省略時は top を立てた等級（＝特賞）。それも無ければ ranks[0]。
+  //   1個/2個/3個 のボーナス盤では null を渡して切る（120°の扇で «惜しい» は成立しない）
+  Wheel.prototype.setRanks = function (ranks, opts) {
     this._winSeg = null; // 扇を作り直すので前回の当たりの参照は捨てる
     this._pendingWin = null;
     this._nearT = null;
     this._nearSeg = null;
-    // ranks[0] が最上位（1等）。app.js の findRankIndex と同じ «配列順＝等級順» の約束に乗る
-    this._topRankId = (ranks && ranks[0] && ranks[0].id) || null;
+    if (opts && Object.prototype.hasOwnProperty.call(opts, "nearTarget")) {
+      this._topRankId = opts.nearTarget || null;
+    } else {
+      var target = null;
+      for (var i = 0; i < (ranks || []).length; i++) {
+        if (ranks[i] && ranks[i].top) { target = ranks[i].id; break; }
+      }
+      this._topRankId = target || ((ranks && ranks[0] && ranks[0].id) || null);
+    }
     try {
       this.segments = buildSegments(ranks);
     } catch (e) {
@@ -838,6 +759,9 @@ window.NV = window.NV || {};
     if (this._nearT != null) this._drawNearMiss(ctx, radius, outer);
     if (this._winSeg && !this.isSpinning) this._drawWinGlow(ctx, radius);
     this._drawRing(ctx, radius, outer, speed);
+    // 特賞は幅3.6°で、遠目には «線» にしか見えない。外周に小さな菱形を置いて
+    // «そこに何かある» ことを伝える。文字は入らない（MIN_LABEL_DEG=12 より細い）
+    this._drawJackpotMark(ctx, radius, outer, speed);
 
     // 等級名。高速時は消す。読めないうえ、残っていると残像を濁らせる
     var labelAlpha = 1 - Math.min(1, speed * 1.7);
@@ -957,6 +881,36 @@ window.NV = window.NV || {};
     ctx.closePath();
     ctx.globalCompositeOperation = "lighter";
     ctx.fillStyle = "rgba(255,246,222," + (0.20 * t * t).toFixed(3) + ")";
+    ctx.fill();
+    ctx.restore();
+  };
+
+  // 特賞の目印。外周に小さな菱形を1つ。高速時は消す（残っても点滅にしか見えない）
+  Wheel.prototype._drawJackpotMark = function (ctx, radius, outer, speed) {
+    var seg = null;
+    for (var i = 0; i < this.segments.length; i++) {
+      if (this.segments[i].rank && this.segments[i].rank.jackpot) { seg = this.segments[i]; break; }
+    }
+    if (!seg) return;
+    var alpha = 1 - Math.min(1, (speed || 0) * 1.6);
+    if (alpha <= 0.03) return;
+
+    var mid = (seg.start + seg.end) / 2 + this.rotation - Math.PI / 2;
+    var band = outer - radius;
+    var rr = radius + band / 2;
+    var d = band * 1.7;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(Math.cos(mid) * rr, Math.sin(mid) * rr);
+    ctx.rotate(mid + Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, -d);
+    ctx.lineTo(d * 0.62, 0);
+    ctx.lineTo(0, d);
+    ctx.lineTo(-d * 0.62, 0);
+    ctx.closePath();
+    ctx.fillStyle = seg.soldOut ? "rgba(150,140,118,0.55)" : "#FFF3CF";
     ctx.fill();
     ctx.restore();
   };
@@ -1158,8 +1112,7 @@ window.NV = window.NV || {};
   // 検証用の内部関数の限定公開（ブラウザ実行には影響しない。Node等でのテスト専用）
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
-      buildSegments: buildSegments, desaturate: desaturate,
-      splitCounts: splitCounts, interleave: interleave
+      buildSegments: buildSegments, desaturate: desaturate
     };
   }
 })();

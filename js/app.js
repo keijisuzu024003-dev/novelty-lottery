@@ -20,6 +20,12 @@ window.NV = window.NV || {};
 
   var LONG_PRESS_MS = 1500;
   var SPIN_DURATION_MS = 4500;
+  // ボーナス盤（1個 / 2個 / 3個）。本編より短く回す。
+  // 同じ長さで回すと «おまけ» が本編と同じ重さになり、全体が間延びする
+  var BONUS_DURATION_MS = 2600;
+  var BONUS_REVEAL_MS = 700;
+  // 炸裂の直後は来場者の指がまだ動いている。選択画面を出してすぐは触らせない
+  var CHOOSE_ARM_MS = 450;
   // 止まってから結果の幕を降ろすまでの «間»。
   // 0 にすると炸裂も衝撃波も幕の裏に隠れて、演出が丸ごと無駄になる
   var RESULT_DELAY_MS = 520;
@@ -33,9 +39,26 @@ window.NV = window.NV || {};
   // 音も画も完全に止め、上昇音だけを鳴らしてから炸裂させる。
   // これが «えっ……» の一拍になる。0 にすると当たりがただ «起きる» だけになる
   var FREEZE_MS = 340;
+  // 特賞はさらに長く止める。1%の一撃なので、ここだけは間延びを恐れなくていい
+  var FREEZE_TOP_MS = 480;
   var freezeTimer = null;
 
   var el = {};
+
+  // 1回ぶんの抽選。等級が決まってから、品目を選び終えるまでを持つ。
+  //   { rankId, rankLabel, rank0, jackpot, need, picked: [item...] }
+  // 【重要】品目が決まるまで在庫は減らさない。減らすのは commitItem を呼ぶ瞬間だけ
+  var round = null;
+
+  // ボーナス盤。1個 / 2個 / 3個 を 120° ずつ。3個だけ特賞と同じ金にして «上がり» を示す
+  var BONUS_RANKS = [
+    { id: 'b1', label: '1個', weight: 1, noStock: true, items: [],
+      color: '#2A5375', colorDark: '#101F2D' },
+    { id: 'b2', label: '2個', weight: 1, noStock: true, items: [],
+      color: '#9E3129', colorDark: '#4A1310' },
+    { id: 'b3', label: '3個', weight: 1, noStock: true, items: [],
+      color: '#F2C230', colorDark: '#8A6A12' }
+  ];
 
   var prefersReducedMotion = false;
   try {
@@ -55,6 +78,14 @@ window.NV = window.NV || {};
     el.resultItem = document.getElementById('result-item');
     el.resultNote = document.getElementById('result-note');
     el.btnClose = document.getElementById('btn-close');
+    el.overlayJackpot = document.getElementById('overlay-jackpot');
+    el.btnBonus = document.getElementById('btn-bonus');
+    el.overlayChoose = document.getElementById('overlay-choose');
+    el.chooseHead = document.getElementById('choose-head');
+    el.chooseSub = document.getElementById('choose-sub');
+    el.chooseGrid = document.getElementById('choose-grid');
+    el.chooseBar = document.getElementById('choose-bar');
+    el.resultList = document.getElementById('result-list');
     el.rays = document.getElementById('rays');
     el.dust = document.getElementById('dust');
     el.edge = document.getElementById('edge');
@@ -80,6 +111,7 @@ window.NV = window.NV || {};
     // 在庫が尽きた品目を帯から外す。作り直すと流れが頭に戻るので、
     // 並びが変わったときだけ組み直す（buildTicker の中で判定している）
     if (name === 'idle') { buildTicker(); }
+    if (name !== 'choosing') { clearChooseTimer(); }
     syncRays();
   }
 
@@ -164,9 +196,12 @@ window.NV = window.NV || {};
 
   function goIdleOrFinished(){
     isBusy = false;
+    round = null;
     clearResultReveal();
     clearFreeze();
     clearSecondWave();
+    clearChooseTimer();
+    if (el.body) { el.body.classList.remove('multi'); }
     el.body.classList.remove('tensing', 'freeze');
     resetTension();  // CSS のトランジションでゆっくり引く
     // 在庫0になった等級を円盤から外す。停止直後にやると setRanks が
@@ -185,12 +220,13 @@ window.NV = window.NV || {};
     if (isBusy) { return; }
     if (el.body.dataset.state !== 'idle') { return; }
 
-    var result = null;
+    var drawn = null;
     try {
-      result = NV.lottery.draw(state);
+      drawn = NV.lottery.draw(state);
     } catch (e) {
       console.warn('[NV.app] draw に失敗', e);
     }
+    var result = drawn;
 
     if (!result) {
       // 在庫切れ（あるいは何らかの異常）は抽選を止めて終了画面へ
@@ -209,14 +245,25 @@ window.NV = window.NV || {};
     try { NV.sound.whoosh(); } catch (e) {}
     try { NV.sound.rollStart(); } catch (e) {}
 
+    // 1回ぶんの記録をここで作る。品目はまだ決まっていない
+    var rank0 = findRankIndex(result.rankId);
+    round = {
+      rankId: result.rankId,
+      rankLabel: result.rankLabel,
+      rank0: rank0,
+      jackpot: !!result.jackpot,
+      need: 1,
+      picked: []
+    };
+
     var spinPromise;
-    // C. 1等のときだけ、回転を長く取り終盤を寝かせる。止まる寸前の「間」を作る
-    var isTop = !!(state.ranks && state.ranks[0] && state.ranks[0].id === result.rankId);
+    // 特賞と1等は回転を長く取り、終盤を寝かせる。止まる寸前の「間」を作る
+    var isTop = rank0 <= 1;
     try {
       spinPromise = wheel.spinTo(result.rankId, {
         suspense: isTop,
         duration: isTop ? Math.round(SPIN_DURATION_MS * 1.55) : SPIN_DURATION_MS,
-        // 1等は止まっても炸裂させない。FREEZE_MS 置いてから burst() で起こす
+        // 特賞・1等は止まっても炸裂させない。FREEZE_MS 置いてから burst() で起こす
         holdFlare: isTop,
         onTick: function(speed01, step){
           if (step) {
@@ -275,39 +322,26 @@ window.NV = window.NV || {};
   function onSpinDone(result){
     // ラチェットで既に止めているが、見張りタイマー経由で来たときのための保険
     try { NV.sound.rollStop(); } catch (e) {}
-    var rank0 = findRankIndex(result.rankId);
+    var rank0 = (round && round.rank0 != null) ? round.rank0 : findRankIndex(result.rankId);
 
-    var committed = false;
-    try {
-      committed = NV.lottery.commit(state, result);
-    } catch (e) {
-      console.warn('[NV.app] commit で例外', e);
-    }
+    // 【在庫はここでは減らさない】品目を選ぶのは来場者。
+    // 減るのは commitItem を呼ぶ瞬間だけ（選択画面 or 自動選択）。
+    // 途中で «次の人へ» に進まれても、選ばれていない品目は減らないままになる。
 
-    if (!committed) {
-      // draw から commit までの間に在庫が想定外に変わっていた場合の保険。
-      // 表示は崩さず、素直に待機画面へ戻す。
-      console.warn('[NV.app] 在庫不整合のため commit できませんでした。idle に戻します');
-      isBusy = false;
-      setState('idle');
-      return;
-    }
-
-    try { NV.storage.save(state); } catch (e) {}
-
-    if (rank0 === 0) {
-      // --- 1等だけ：ここで «時間を止める» ---
+    if (rank0 <= 1) {
+      // --- 特賞と1等だけ：ここで «時間を止める» ---
       // 盤は止まったまま、当たりの扇も光らせない。上昇音だけが鳴り、盤へゆっくり寄る。
-      // 何も起きない 340ms があるから、次の一撃が «爆発» になる
+      // 何も起きない一拍があるから、次の一撃が «爆発» になる
+      var ms = (rank0 === 0) ? FREEZE_TOP_MS : FREEZE_MS;
       el.body.classList.remove('tensing');
       el.body.classList.add('freeze');
       setZoom(zoom + 0.05);
-      try { NV.sound.riser(FREEZE_MS); } catch (e) {}
+      try { NV.sound.riser(ms); } catch (e) {}
       clearFreeze();
       freezeTimer = setTimeout(function(){
         freezeTimer = null;
         fireBurst(result, rank0);
-      }, FREEZE_MS);
+      }, ms);
       return;
     }
     fireBurst(result, rank0);
@@ -319,18 +353,19 @@ window.NV = window.NV || {};
     // 炸裂で «引く»。寄り続けたカメラが弾かれる感じを作る（700ms かけて戻る）
     setZoom(1.055);
     // 一撃は画より先に。ここで数ミリ遅れると «ズレた» と感じる
-    try { NV.sound.impact(rank0 === 0 ? 1 : (rank0 === 1 ? 0.8 : 0.62)); } catch (e) {}
+    try { NV.sound.impact(IMPACT[rank0] != null ? IMPACT[rank0] : 0.62); } catch (e) {}
     impactShake();
-    try { wheel.burst(); } catch (e) {}                 // 保留していた炸裂（1等のみ）
+    try { wheel.burst(); } catch (e) {}                 // 保留していた炸裂（特賞・1等）
     flashOnce(rank0);                                   // 閃光は3等にも。差は強さで付ける
-    try { NV.confetti.burst(rank0 + 1); } catch (e) {}
-    try { NV.sound.fanfare(rank0); } catch (e) {}
-    if (rank0 === 0) { try { NV.sound.applause(2); } catch (e) {} }
+    try { NV.confetti.burst(rank0); } catch (e) {}
+    // ファンファーレは3段しかない。特賞は1等と同じ «いちばん長いやつ» を使う
+    try { NV.sound.fanfare(Math.max(0, rank0 - 1)); } catch (e) {}
+    if (rank0 <= 1) { try { NV.sound.applause(rank0 === 0 ? 2.6 : 2); } catch (e) {} }
     try { wheel.keepGlowing(); } catch (e) {}           // 当たりの扇を脈打たせ続ける
     edgeBurn(rank0);                                    // 画面の縁が燃える
     raysHit(rank0 === 0);                               // 背景の光条が外へ抜ける
 
-    // --- 二撃目（1等のみ）---
+    // --- 二撃目（特賞のみ）---
     // «まだ終わらない» が盛り上がりの正体。ここで音を重ね直すと団子になるので、
     // 帯域の空いている高音（shimmer）と、落下の遅い金テープだけを足す
     clearSecondWave();
@@ -346,14 +381,19 @@ window.NV = window.NV || {};
       }, SECOND_WAVE_MS);
     }
 
-    // 一拍おいてから結果を叩きつける。
-    // ここを 0 にすると «止まった瞬間に答えが出る» だけになり、間が消える
+    // 一拍おいてから幕を降ろす。
+    // ここを 0 にすると «止まった瞬間に答えが出る» だけになり、間が消える。
+    // 特賞は «品目» ではなく «もう一度回す» の画面へ行く
     clearResultReveal();
     resultRevealTimer = setTimeout(function(){
       resultRevealTimer = null;
-      showResult(result);
+      if (round && round.jackpot) { showJackpot(); }
+      else { showChoose(); }
     }, rank0 === 0 ? RESULT_DELAY_TOP : RESULT_DELAY_MS);
   }
+
+  // 等級ごとの一撃の強さ。特賞 / 1等 / 2等 / 3等
+  var IMPACT = [1, 0.9, 0.8, 0.62];
 
   function clearSecondWave(){
     if (secondWaveTimer) { clearTimeout(secondWaveTimer); secondWaveTimer = null; }
@@ -363,6 +403,7 @@ window.NV = window.NV || {};
   // 画面上でいちばん大きい要素なので、いちばん遠くから見える。
   // 等級の差は «光の量と長さ» だけで付ける（形は変えない）
   var EDGE = [
+    { peak: '1',    dur: '1600ms' },   // 特賞
     { peak: '1',    dur: '1300ms' },   // 1等
     { peak: '0.52', dur: '900ms'  },   // 2等
     { peak: '0.30', dur: '620ms'  }    // 3等
@@ -417,36 +458,358 @@ window.NV = window.NV || {};
     setTension(tension);
   }
 
-  // 結果の幕。onSpinDone から RESULT_DELAY_MS 遅れて呼ばれる
-  function showResult(result){
+  // ---- 特賞：もう一度回す ----
+  function showJackpot(){
     setPeek(false);
-    if (el.resultRank) { el.resultRank.textContent = result.rankLabel; }
-    // B. 何が当たったのかを絵で見せる。文字だけだと現物が想像できない
-    var found = itemById(result.itemId);
-    if (el.resultPlate && el.resultImg) {
-      var img = found && found.image;
-      if (img) {
-        el.resultImg.src = img;
-        el.resultPlate.classList.remove('hidden');
-      } else {
-        el.resultImg.removeAttribute('src');
-        el.resultPlate.classList.add('hidden');
+    setState('jackpot');
+    if (el.btnBonus) {
+      el.btnBonus.disabled = true;
+      setTimeout(function(){ if (el.btnBonus) { el.btnBonus.disabled = false; } }, CHOOSE_ARM_MS);
+    }
+  }
+
+  // ボーナス盤（1個 / 2個 / 3個）。盤を作り替えて短く回す。
+  // 個数は均等（各120°）。細くすると2回目まで «どうせ1個» になり、せっかくの2回目が死ぬ
+  function startBonusSpin(){
+    if (!round || !round.jackpot) { return; }
+    if (el.body.dataset.state !== 'jackpot') { return; }
+
+    var n = 1 + Math.floor(Math.random() * 3);
+    setState('spinning');
+    el.body.classList.add('tensing');
+    resetTension();
+    try { NV.sound.whoosh(); } catch (e) {}
+    try { NV.sound.rollStart(); } catch (e) {}
+    // near-miss は切る。120°の扇で «惜しい» は成立しない
+    try { wheel.setRanks(BONUS_RANKS, { nearTarget: null }); } catch (e) {}
+
+    var settled = false;
+    var finish = function(){
+      if (settled) { return; }
+      settled = true;
+      try { NV.sound.rollStop(); } catch (e) {}
+      round.need = n;
+      // 3個ほど大きく炸裂させる。1個でも «おまけが出た» ぶんの熱は要る
+      var lvl = 3 - n;   // 3個→0（特賞級） / 2個→1 / 1個→2
+      el.body.classList.remove('freeze', 'tensing');
+      setZoom(1.055);
+      try { NV.sound.impact(IMPACT[lvl]); } catch (e) {}
+      impactShake();
+      flashOnce(lvl);
+      try { NV.confetti.burst(lvl); } catch (e) {}
+      try { NV.sound.fanfare(Math.max(0, lvl - 1)); } catch (e) {}
+      try { wheel.keepGlowing(); } catch (e) {}
+      edgeBurn(lvl);
+      raysHit(n === 3);
+      clearResultReveal();
+      resultRevealTimer = setTimeout(function(){
+        resultRevealTimer = null;
+        showChoose();
+      }, BONUS_REVEAL_MS);
+    };
+
+    var pr = null;
+    try {
+      pr = wheel.spinTo('b' + n, {
+        duration: BONUS_DURATION_MS,
+        onTick: function(speed01, step){
+          if (step) {
+            try { NV.sound.ratchetTick(step.i, step.n); } catch (e) {}
+            bumpPointer(true);
+          } else {
+            try { NV.sound.tick(speed01); } catch (e) {}
+            bumpPointer(false);
+          }
+        },
+        onRatchet: function(){ try { NV.sound.rollStop(); } catch (e) {} },
+        onFrame: feedTension
+      });
+    } catch (e) {
+      console.warn('[NV.app] ボーナス盤の回転に失敗', e);
+    }
+    // 本編と同じ理由の見張りタイマー。rAF が止まっても必ず先へ進める
+    var watch = setTimeout(function(){
+      try { if (wheel && wheel.finishNow) { wheel.finishNow(); } } catch (e) {}
+      finish();
+    }, BONUS_DURATION_MS + 6000);
+    Promise.resolve(pr).then(function(){ clearTimeout(watch); finish(); },
+                             function(){ clearTimeout(watch); finish(); });
+  }
+
+  // ---- 品目の選択 ----
+  //
+  // 選ぶのは来場者。在庫が減るのはここで commitItem を呼ぶ瞬間だけ。
+  // 在庫0の品目は並べない（残数そのものは来場者向け画面に一切出さない）。
+  var chooseTimer = null;
+  var chooseTick = null;
+
+  function clearChooseTimer(){
+    if (chooseTimer) { clearTimeout(chooseTimer); chooseTimer = null; }
+    if (chooseTick) { clearInterval(chooseTick); chooseTick = null; }
+    if (el.chooseBar) { el.chooseBar.style.width = '0%'; }
+  }
+
+  function totalStock(){
+    var n = 0;
+    var ranks = (state && state.ranks) || [];
+    for (var i = 0; i < ranks.length; i++) {
+      var items = ranks[i].items || [];
+      for (var j = 0; j < items.length; j++) { n += Math.max(0, Number(items[j].stock) || 0); }
+    }
+    return n;
+  }
+
+  function showChoose(){
+    if (!round) { goIdleOrFinished(); return; }
+    setPeek(false);
+
+    // 在庫より多くは選べない。特賞で3個でも在庫が2個なら「2個」に落とす
+    var left = totalStock();
+    if (round.need > left) { round.need = Math.max(0, left); }
+    if (round.need <= 0) { goIdleOrFinished(); return; }
+
+    // 混雑時の逃げ道：スタッフが «自動で選ぶ» にしていたらアプリが決める
+    var auto = !!(state.settings && state.settings.itemPick === 'auto');
+    if (auto) { autoPickRest(); return; }
+
+    renderChoose();
+    setState('choosing');
+
+    // 炸裂直後は指がまだ動いている。少しのあいだ触らせない
+    if (el.chooseGrid) {
+      el.chooseGrid.classList.add('arming');
+      setTimeout(function(){
+        if (el.chooseGrid) { el.chooseGrid.classList.remove('arming'); }
+      }, CHOOSE_ARM_MS);
+    }
+    startChooseTimer();
+  }
+
+  function renderChoose(){
+    if (!el.chooseGrid || !round) { return; }
+    var items = [];
+    try { items = NV.lottery.selectableItems(state, round.rankId) || []; } catch (e) {}
+
+    if (el.chooseHead) { el.chooseHead.textContent = round.rankLabel; }
+    if (el.chooseSub) {
+      var rest = round.need - round.picked.length;
+      el.chooseSub.textContent = (round.need > 1)
+        ? ('お好きなものを ' + rest + '個 お選びください')
+        : 'お好きなものをお選びください';
+    }
+
+    // 4枚以上並ぶ（＝特賞で全等級から選ぶ）ときは一言を落とす。
+    // 1枚あたりが詰まって、いちばん大事な «絵と品名» まで読めなくなる
+    el.chooseGrid.classList.toggle('dense', items.length >= 4);
+
+    el.chooseGrid.innerHTML = '';
+    for (var i = 0; i < items.length; i++) {
+      el.chooseGrid.appendChild(makeChooseCard(items[i]));
+    }
+  }
+
+  function makeChooseCard(item){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cc';
+    b.setAttribute('data-item', item.id);
+
+    var plate = document.createElement('span');
+    plate.className = 'cc-plate';
+    if (item.image) {
+      var img = document.createElement('img');
+      img.src = item.image;
+      img.alt = '';
+      plate.appendChild(img);
+    }
+    b.appendChild(plate);
+
+    var name = document.createElement('b');
+    name.textContent = item.name;
+    b.appendChild(name);
+
+    if (item.note) {
+      var note = document.createElement('i');
+      note.textContent = item.note;
+      b.appendChild(note);
+    }
+    return b;
+  }
+
+  // 制限時間。既定はオフ。時間切れは在庫が最も多い品目を自動で選ぶ
+  function startChooseTimer(){
+    clearChooseTimer();
+    var sec = 0;
+    try { sec = Number(state.settings.chooseSec) || 0; } catch (e) {}
+    if (!(sec > 0)) { return; }
+    var start = Date.now();
+    if (el.chooseBar) { el.chooseBar.style.width = '100%'; }
+    chooseTick = setInterval(function(){
+      var t = 1 - (Date.now() - start) / (sec * 1000);
+      if (t < 0) { t = 0; }
+      if (el.chooseBar) { el.chooseBar.style.width = (t * 100).toFixed(1) + '%'; }
+    }, 100);
+    chooseTimer = setTimeout(function(){
+      chooseTimer = null;
+      clearChooseTimer();
+      autoPickRest();
+    }, sec * 1000);
+  }
+
+  // 残りぶんをアプリが選ぶ（«自動で選ぶ» 設定・制限時間切れ・在庫都合）
+  function autoPickRest(){
+    if (!round) { return; }
+    var guard = 0;
+    while (round.picked.length < round.need && guard++ < 20) {
+      var it = null;
+      try { it = NV.lottery.pickItem(state, round.rankId); } catch (e) {}
+      if (!it) { break; }
+      if (!takeItem(it.id)) { break; }
+    }
+    finishRound();
+  }
+
+  // 品目を1つ確定する。在庫が0なら false（配りすぎはここで止まる）
+  function takeItem(itemId){
+    if (!round) { return false; }
+    var found = null;
+    try { found = NV.lottery.findItem(state, itemId); } catch (e) {}
+    if (!found) { return false; }
+
+    var note = round.jackpot
+      ? ('特賞 ' + (round.picked.length + 1) + '/' + round.need)
+      : '';
+    var ok = false;
+    try { ok = NV.lottery.commitItem(state, itemId, note); } catch (e) {
+      console.warn('[NV.app] commitItem で例外', e);
+    }
+    if (!ok) { return false; }
+
+    round.picked.push({
+      id: found.item.id, name: found.item.name,
+      image: found.item.image, note: found.item.note,
+      rankLabel: found.rank.label
+    });
+    try { NV.storage.save(state); } catch (e) {}
+    return true;
+  }
+
+  function onChoosePick(itemId){
+    if (!round || el.body.dataset.state !== 'choosing') { return; }
+    if (!takeItem(itemId)) {
+      // 在庫が尽きていた。並べ直して選び直してもらう
+      renderChoose();
+      return;
+    }
+    try { NV.sound.ui(); } catch (e) {}
+    if (round.picked.length >= round.need || totalStock() <= 0) {
+      clearChooseTimer();
+      finishRound();
+      return;
+    }
+    renderChoose();
+    startChooseTimer();
+  }
+
+  function finishRound(){
+    clearChooseTimer();
+    if (!round || round.picked.length === 0) { goIdleOrFinished(); return; }
+    showResult();
+  }
+
+  // 結果の幕。品目が決まってから呼ばれる
+  function showResult(){
+    setPeek(false);
+    var picked = (round && round.picked) || [];
+    if (picked.length === 0) { goIdleOrFinished(); return; }
+
+    // 特賞で2個以上のときは «1品を大きく» が成立しない。小さく並べる方へ切り替える
+    var multi = picked.length > 1;
+    el.body.classList.toggle('multi', multi);
+
+    if (multi) {
+      if (el.resultRank) { el.resultRank.textContent = round.rankLabel; }
+      if (el.resultItem) {
+        el.resultItem.textContent = picked.length + '個';
+        el.resultItem.className = '';
       }
+      if (el.resultNote) { el.resultNote.textContent = 'お渡しください'; }
+      renderResultList(picked);
+    } else {
+      var it = picked[0];
+      // 特賞から1個だけ選ばれた場合は «特賞 → 2等» のように両方見せる。
+      // 等級だけだと «特賞なのに2等？» に見え、スタッフが説明に困る
+      if (el.resultRank) {
+        el.resultRank.textContent = round.jackpot
+          ? (round.rankLabel + ' → ' + it.rankLabel) : it.rankLabel;
+      }
+      // B. 何が当たったのかを絵で見せる。文字だけだと現物が想像できない
+      if (el.resultPlate && el.resultImg) {
+        if (it.image) {
+          el.resultImg.src = it.image;
+          el.resultPlate.classList.remove('hidden');
+        } else {
+          el.resultImg.removeAttribute('src');
+          el.resultPlate.classList.add('hidden');
+        }
+      }
+      if (el.resultItem) {
+        el.resultItem.textContent = it.name;
+        // 品目名は20文字前後になることがある。
+        // 文字数で段階的に縮めて、2行に収まる大きさにする（遠目に読めることが最優先なので
+        // 縮めすぎない。折り返しの見た目は CSS の text-wrap:balance に任せる）
+        var n = (it.name || '').length;
+        el.resultItem.className = n > 22 ? 'len-l' : (n > 12 ? 'len-m' : '');
+      }
+      // 品目の一言。無い品目（デモデータや手入力）では行ごと消える
+      if (el.resultNote) { el.resultNote.textContent = it.note || ''; }
+      if (el.resultList) { el.resultList.innerHTML = ''; }
     }
-    if (el.resultItem) {
-      el.resultItem.textContent = result.itemName;
-      // 品目名は20文字前後になることがある。
-      // 文字数で段階的に縮めて、2行に収まる大きさにする（遠目に読めることが最優先なので
-      // 縮めすぎない。折り返しの見た目は CSS の text-wrap:balance に任せる）
-      var n = (result.itemName || '').length;
-      el.resultItem.className = n > 22 ? 'len-l' : (n > 12 ? 'len-m' : '');
-    }
-    // 品目の一言。無い品目（デモデータや手入力）では行ごと消える
-    if (el.resultNote) { el.resultNote.textContent = (found && found.note) || ''; }
+
     armNext();
     setState('result');
     slamResult();
     scheduleAutoAdvance();
+  }
+
+  // 特賞で複数個のときの一覧。絵と品名だけの行を並べる
+  function renderResultList(picked){
+    if (!el.resultList) { return; }
+
+    // 同じ品目を複数選ぶことは «制限なし» なので普通に起きる。
+    // 同じ行を3本並べるより «×3» のほうが、渡すときに数え違えない
+    var groups = [];
+    for (var i = 0; i < picked.length; i++) {
+      var hit = null;
+      for (var g = 0; g < groups.length; g++) {
+        if (groups[g].item.id === picked[i].id) { hit = groups[g]; break; }
+      }
+      if (hit) { hit.n++; } else { groups.push({ item: picked[i], n: 1 }); }
+    }
+
+    el.resultList.innerHTML = '';
+    for (var k = 0; k < groups.length; k++) {
+      var row = document.createElement('div');
+      row.className = 'rl';
+      var plate = document.createElement('span');
+      plate.className = 'rl-plate';
+      if (groups[k].item.image) {
+        var img = document.createElement('img');
+        img.src = groups[k].item.image;
+        img.alt = '';
+        plate.appendChild(img);
+      }
+      row.appendChild(plate);
+      var name = document.createElement('b');
+      name.textContent = groups[k].item.name;
+      row.appendChild(name);
+      if (groups[k].n > 1) {
+        var mult = document.createElement('em');
+        mult.textContent = '×' + groups[k].n;
+        row.appendChild(mult);
+      }
+      el.resultList.appendChild(row);
+    }
   }
 
   function clearResultReveal(){
@@ -459,7 +822,7 @@ window.NV = window.NV || {};
         if (state.ranks[i].id === rankId) { return i; }
       }
     } catch (e) {}
-    return 2; // 見つからない場合は最も控えめな演出（3等相当）に倒す
+    return 3; // 見つからない場合は最も控えめな演出（3等相当）に倒す
   }
 
   function bumpPointer(hard){
@@ -472,6 +835,7 @@ window.NV = window.NV || {};
 
   // 等級ごとの閃光。--peak / --fade を書き換えてから再生する
   var FLASH = [
+    { peak: '0.72', fade: '380ms' },  // 特賞
     { peak: '0.60', fade: '320ms' },  // 1等
     { peak: '0.38', fade: '250ms' },  // 2等
     { peak: '0.22', fade: '190ms' }   // 3等
@@ -912,6 +1276,23 @@ window.NV = window.NV || {};
         nextPerson();
       });
     }
+    // 特賞：もう一度回す
+    if (el.btnBonus) {
+      el.btnBonus.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        startBonusSpin();
+      });
+    }
+    // 品目の選択。カードは選ぶたびに作り直すので、親でクリックを拾う
+    if (el.chooseGrid) {
+      el.chooseGrid.addEventListener('click', function(ev){
+        var t = ev.target;
+        while (t && t !== el.chooseGrid && !t.getAttribute('data-item')) { t = t.parentNode; }
+        if (!t || t === el.chooseGrid) { return; }
+        ev.stopPropagation();
+        onChoosePick(t.getAttribute('data-item'));
+      });
+    }
     // 「円盤を見る」= 結果の文字を一旦どけて、ポインタがどの扇で止まったかを見せる。
     // 抽選は終わっているので data-state は 'result' のまま動かさない。
     if (el.btnClose) {
@@ -940,6 +1321,9 @@ window.NV = window.NV || {};
       if (current === 'idle') {
         ev.preventDefault();
         startSpin();
+      } else if (current === 'jackpot') {
+        ev.preventDefault();
+        startBonusSpin();
       } else if (current === 'result') {
         ev.preventDefault();
         if (el.body.classList.contains('result-peek')) { setPeek(false); }

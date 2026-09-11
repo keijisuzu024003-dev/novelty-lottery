@@ -376,11 +376,29 @@ window.NV = window.NV || {};
       root.querySelector('[data-role="b-sub"]').textContent =
         "本日 " + todayHere + " 回" + (pace !== null ? "（およそ " + pace + " 回/時）" : "");
 
+      // 特賞は自前の在庫を持たないので «残数» が出せない。本日出た人数を数える。
+      // 履歴の備考が「特賞 1/n」の行＝特賞に当たった人（2個目以降は数えない）
+      var jackpotToday = 0;
+      for (var jj = 0; jj < hist.length; jj++) {
+        var hj = hist[jj];
+        if (!hj || hj.venue !== venue || !(hj.ts >= t0)) continue;
+        if (typeof hj.note === "string" && hj.note.indexOf("特賞 1/") === 0) jackpotToday++;
+      }
+
       var grid = root.querySelector('[data-role="b-grid"]');
       var html = "";
       var ranks = state.ranks || [];
       var totalLeft = 0, totalInit = 0;
       for (var r = 0; r < ranks.length; r++) {
+        if (ranks[r].jackpot) {
+          // 在庫の枠に 0/0 と出すと «品切れ» に見える。人数を出す
+          html += '<div class="nvs-board-cell">' +
+                    '<span class="c-label">' + esc(ranks[r].label) + '</span>' +
+                    '<span class="c-num">' + jackpotToday + '</span>' +
+                    '<span class="c-sub">本日の人数</span>' +
+                  '</div>';
+          continue;
+        }
         var left = NV.lottery.rankStock(ranks[r]);
         var init = 0, items = ranks[r].items || [];
         for (var k = 0; k < items.length; k++) init += toNum(items[k].initial, 0);
@@ -501,9 +519,17 @@ window.NV = window.NV || {};
           '<div class="nvs-row">' +
             '<span class="nvs-label">品目の選び方</span>' +
             '<select class="nvs-input" data-action="set-itempick">' +
-              '<option value="stock-weighted">在庫数に比例</option>' +
-              '<option value="even">在庫がある中から均等</option>' +
+              '<option value="choose">来場者が選ぶ</option>' +
+              '<option value="auto">自動で選ぶ</option>' +
             '</select>' +
+            '<span class="nvs-muted">列が詰まったら「自動で選ぶ」へ。'
+              + '1人あたり10〜20秒短くなります</span>' +
+          '</div>' +
+          '<div class="nvs-row">' +
+            '<span class="nvs-label">選択の制限時間(秒)</span>' +
+            '<input type="number" inputmode="numeric" min="0" class="nvs-input num" '
+              + 'data-action="set-choosesec">' +
+            '<span class="nvs-muted">0 = 無制限。時間切れは在庫がいちばん多い品目を自動で選ぶ</span>' +
           '</div>' +
           '<div class="nvs-row">' +
             '<span class="nvs-label">PIN 変更</span>' +
@@ -540,7 +566,10 @@ window.NV = window.NV || {};
       !!(state.settings && state.settings.brightMode);
     setVolumeUI(volumeOf(state));
     r.querySelector('[data-action="set-auto"]').value = toNum(state.settings && state.settings.autoAdvanceSec, 0);
-    r.querySelector('[data-action="set-itempick"]').value = (state.settings && state.settings.itemPick === "even") ? "even" : "stock-weighted";
+    r.querySelector('[data-action="set-itempick"]').value =
+      (state.settings && state.settings.itemPick === "auto") ? "auto" : "choose";
+    r.querySelector('[data-action="set-choosesec"]').value =
+      toNum(state.settings && state.settings.chooseSec, 0);
 
     refreshBoard();
     showSoundState();
@@ -742,7 +771,12 @@ window.NV = window.NV || {};
       return;
     }
     if (action === "set-itempick") {
-      state.settings.itemPick = (t.value === "even") ? "even" : "stock-weighted";
+      state.settings.itemPick = (t.value === "auto") ? "auto" : "choose";
+      notify();
+      return;
+    }
+    if (action === "set-choosesec") {
+      state.settings.chooseSec = Math.max(0, Math.floor(toNum(t.value, 0)));
       notify();
       return;
     }
