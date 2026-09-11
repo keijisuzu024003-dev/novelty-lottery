@@ -574,6 +574,9 @@ body[data-state="spinning"] #hint{ opacity:0.35; }
   text-align:center;
   padding:clamp(18px, 4vmin, 48px);
 }
+/* 選択画面だけは左右の余白を削る。ここはカードを大きく見せるための画面で、
+   余白に譲る意味がない。上下は詰めすぎると窮屈に見えるので残す */
+#overlay-choose{ padding:clamp(12px, 2.4vh, 30px) clamp(10px, 1.6vw, 28px); }
 body[data-state="boot"] #overlay-boot{ display:flex; }
 body[data-state="result"] #overlay-result{ display:flex; }
 body[data-state="jackpot"] #overlay-jackpot{ display:flex; }
@@ -916,42 +919,63 @@ body.result-peek #btn-reopen{ display:block; }
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:clamp(8px, 1.8vmin, 20px);
-  max-width:min(96vw, 1180px);
+  gap:clamp(6px, 1.4vh, 16px);
   width:100%;
 }
+/* 見出しは «高さ» で組む。vmin だと横長画面で下限に張りつく */
 #choose-head{
   font-family:var(--font-display);
-  font-size:clamp(18px, 3.4vmin, 38px);
+  font-size:clamp(22px, 5.2vh, 46px);
+  line-height:1.15;
   letter-spacing:0.28em;
   text-indent:0.28em;
   color:var(--brass-hi);
 }
 #choose-sub{
   font-family:var(--font-display);
-  font-size:clamp(13px, 2.1vmin, 22px);
+  font-size:clamp(15px, 3.1vh, 27px);
+  line-height:1.3;
   letter-spacing:0.1em;
   color:var(--ink-dim);
 }
+/* 1枚の幅を先に決める。
+   ・横：画面幅から余白と隙間を引いて枚数で割る（＝はみ出さない上限）
+   ・縦：カードの高さは «幅 × 約1.45»。画面の高さから見出しぶんを引いた
+         範囲に収まるよう、幅そのものを vh でも抑える
+   ・上限：近づいて見るものではないが、大きすぎると絵の粗が出る
+   この3つの min を取る。どれが効いても横スクロールは起きない */
 #choose-grid{
+  --gap:clamp(10px, 1.8vw, 26px);
+  --side:clamp(10px, 1.6vw, 28px);
+  --avail:calc(100vw - var(--side) * 2);
   display:flex;
-  flex-wrap:wrap;
+  flex-wrap:nowrap;
   align-items:stretch;
   justify-content:center;
-  gap:clamp(8px, 1.6vw, 20px);
+  gap:var(--gap);
   width:100%;
-  margin-top:clamp(4px, 1vmin, 12px);
+  margin-top:clamp(2px, 0.6vh, 10px);
 }
+/* vh の上限は «カードの高さ ÷ 幅» から逆算している。
+   品名3行＋一言2行のとき高さは幅の約1.66倍、一言を落とす4枚以上では約1.45倍。
+   見出し・説明・帯を引いた残りが約 80vh なので、48vh / 55vh が限界。
+   その手前に置いてある。ここを上げるときは必ず縦のはみ出しを測り直すこと */
+#choose-grid.n1{ --cw:min(var(--avail), 620px);                                --pl:min(calc(var(--cw) * 0.62), 50vh, 400px); }
+#choose-grid.n2{ --cw:min(calc((var(--avail) - var(--gap) * 1) / 2), 470px);   --pl:min(calc(var(--cw) * 0.62), 46vh, 330px); }
+#choose-grid.n3{ --cw:min(calc((var(--avail) - var(--gap) * 2) / 3), 380px);   --pl:min(calc(var(--cw) * 0.68), 45vh, 300px); }
+#choose-grid.n4{ --cw:min(calc((var(--avail) - var(--gap) * 3) / 4), 50vh, 300px); }
+#choose-grid.n5{ --cw:min(calc((var(--avail) - var(--gap) * 4) / 5), 50vh, 270px); }
+#choose-grid.n6{ --cw:min(calc((var(--avail) - var(--gap) * 5) / 6), 48vh, 230px); }
 /* 炸裂直後は指がまだ動いている。ほんの一瞬だけ触らせない */
 #choose-grid.arming{ pointer-events:none; opacity:0.55; }
 
 .cc{
-  flex:0 1 clamp(126px, 17vw, 208px);
+  flex:0 0 var(--cw, clamp(126px, 17vw, 208px));
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:clamp(5px, 1vmin, 11px);
-  padding:clamp(9px, 1.6vmin, 18px) clamp(6px, 1vmin, 12px);
+  gap:calc(var(--pl, 128px) * 0.06);
+  padding:calc(var(--pl, 128px) * 0.09) calc(var(--cw, 160px) * 0.05);
   border:1px solid #4A4232;
   border-radius:2px;
   background:linear-gradient(#191614, #100E0C);
@@ -961,7 +985,7 @@ body.result-peek #btn-reopen{ display:block; }
 .cc:active{ transform:scale(0.97); border-color:var(--brass-hi); }
 .cc:focus-visible{ outline:2px solid var(--brass-hi); outline-offset:2px; }
 .cc-plate{
-  width:clamp(72px, 11vw, 132px);
+  width:var(--pl, calc(var(--cw, 160px) * 0.80));
   aspect-ratio:1;
   border-radius:50%;
   background:radial-gradient(circle at 38% 30%, #FFFDF6 0%, #EFE7D6 58%, #D8CDB6 100%);
@@ -970,29 +994,65 @@ body.result-peek #btn-reopen{ display:block; }
   place-items:center;
   overflow:hidden;
 }
-.cc-plate img{ width:80%; height:80%; object-fit:contain; display:block; }
+.cc-plate img{ width:84%; height:84%; object-fit:contain; display:block; }
 .cc b{
   font-family:var(--font-display);
   font-weight:700;
-  font-size:clamp(12px, 1.8vmin, 20px);
-  line-height:1.4;
+  /* カードの幅に対する比。品名は最長で18文字あるので、
+     大きくしすぎると3行に割れてカードだけ縦に伸びる */
+  font-size:clamp(14px, calc(var(--pl, 128px) * 0.122), 34px);
+  line-height:1.35;
   color:var(--ink);
   text-wrap:balance;
   line-break:strict;
+  /* 型番のような途中で切れない文字列が来ても、カードを押し広げさせない */
+  overflow-wrap:anywhere;
 }
 .cc i{
   font-style:normal;
-  font-size:clamp(10px, 1.35vmin, 15px);
-  line-height:1.55;
+  font-size:clamp(11px, calc(var(--pl, 128px) * 0.090), 23px);
+  line-height:1.5;
   color:var(--ink-dim);
   text-wrap:balance;
   line-break:strict;
+  /* 一言は2行まで。カードの高さは «幅から逆算した上限» に収めてあるので、
+     設定画面で長い一言を入れられるとそこだけがはみ出す。切るのは一言だけにする */
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
 }
-/* 4枚以上（特賞）は一言を落として、絵と品名に幅を渡す */
+/* 4枚以上（特賞）は一言を落として、絵と品名に幅を渡す。
+   このとき縦は大きく余る（横幅で頭打ちになるため）ので、
+   余ったぶんを字に回す。5枚並ぶのは特賞だけで、いちばん見せたい場面でもある */
 #choose-grid.dense .cc i{ display:none; }
+#choose-grid.dense .cc-plate{ width:calc(var(--cw, 160px) * 0.86); }
+#choose-grid.dense{ --pl:calc(var(--cw) * 0.86); }
+#choose-grid.dense .cc b{
+  font-size:clamp(15px, calc(var(--cw, 160px) * 0.135), 36px);
+  line-height:1.3;
+}
+/* 縦向きは運用外。横に並べきれないので折り返しを許し、幅は画面幅から取る */
 @media (orientation: portrait){
   .cc i{ display:none; }
-  .cc{ flex:0 1 clamp(110px, 28vw, 190px); }
+  #choose-grid{ flex-wrap:wrap; }
+  /* 縦向きは横に余りが無いので、絵はカード幅いっぱいまで使う。
+     --pl は .nN と同じ詳細度で書かないと、横向き用の 0.62 に負ける */
+  #choose-grid.n1{ --cw:min(var(--avail), 60vw, 340px);
+                   --pl:calc(var(--cw) * 0.82); }
+  #choose-grid.n2,
+  #choose-grid.n3{ --cw:min(calc((var(--avail) - var(--gap)) / 2), 44vw, 260px);
+                   --pl:calc(var(--cw) * 0.82); }
+  #choose-grid.n4,
+  #choose-grid.n5,
+  #choose-grid.n6{ --cw:min(calc((var(--avail) - var(--gap) * 2) / 3), 30vw, 210px);
+                   --pl:calc(var(--cw) * 0.86); }
+}
+
+/* 極端に低い画面（分割表示など。運用外だが崩さない）。
+   一言を落とすだけで、カード1枚あたり45px前後の高さが浮く */
+@media (max-height: 480px){
+  .cc i{ display:none; }
 }
 
 /* 制限時間の帯。設定していないときは幅0のまま動かない */

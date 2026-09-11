@@ -614,6 +614,12 @@ window.NV = window.NV || {};
     // 1枚あたりが詰まって、いちばん大事な «絵と品名» まで読めなくなる
     el.chooseGrid.classList.toggle('dense', items.length >= 4);
 
+    // 枚数を CSS へ渡す。«横に何枚並ぶか» が決まらないと
+    // 1枚の幅を決められず、絵も字も控えめな固定値にしか置けない
+    var n = Math.max(1, Math.min(6, items.length));
+    for (var k = 1; k <= 6; k++) { el.chooseGrid.classList.remove('n' + k); }
+    el.chooseGrid.classList.add('n' + n);
+
     el.chooseGrid.innerHTML = '';
     for (var i = 0; i < items.length; i++) {
       el.chooseGrid.appendChild(makeChooseCard(items[i]));
