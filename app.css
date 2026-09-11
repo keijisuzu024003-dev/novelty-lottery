@@ -961,8 +961,8 @@ body.result-peek #btn-reopen{ display:block; }
    見出し・説明・帯を引いた残りが約 80vh なので、48vh / 55vh が限界。
    その手前に置いてある。ここを上げるときは必ず縦のはみ出しを測り直すこと */
 #choose-grid.n1{ --cw:min(var(--avail), 620px);                                --pl:min(calc(var(--cw) * 0.62), 50vh, 400px); }
-#choose-grid.n2{ --cw:min(calc((var(--avail) - var(--gap) * 1) / 2), 470px);   --pl:min(calc(var(--cw) * 0.62), 46vh, 330px); }
-#choose-grid.n3{ --cw:min(calc((var(--avail) - var(--gap) * 2) / 3), 380px);   --pl:min(calc(var(--cw) * 0.68), 45vh, 300px); }
+#choose-grid.n2{ --cw:min(calc((var(--avail) - var(--gap) * 1) / 2), 470px);   --pl:min(calc(var(--cw) * 0.62), 40vh, 330px); }
+#choose-grid.n3{ --cw:min(calc((var(--avail) - var(--gap) * 2) / 3), 380px);   --pl:min(calc(var(--cw) * 0.68), 39vh, 300px); }
 #choose-grid.n4{ --cw:min(calc((var(--avail) - var(--gap) * 3) / 4), 50vh, 300px); }
 #choose-grid.n5{ --cw:min(calc((var(--avail) - var(--gap) * 4) / 5), 50vh, 270px); }
 #choose-grid.n6{ --cw:min(calc((var(--avail) - var(--gap) * 5) / 6), 48vh, 230px); }
