@@ -231,11 +231,16 @@ body[data-state="choosing"] #panel{ position:absolute; pointer-events:none; }
 }
 @media (orientation: portrait){
   #frame{ flex-direction:column; }
-  /* 縦向きは運用外（Redmi Pad 2 は横向き運用）。崩れないことだけ担保する。
-     帯も細くし、絵と一言を落として品名だけにする */
+  /* 縦向きは Dahua 55型サイネージ（縦 2160x3840）の本番向き。
+     寸法は --u（＝ 9:16 の箱に収めたときの 1/100 の幅）で組む。
+     実機の CSS viewport が 1080x1920 でも 2160x3840 でも同じ見た目になり、
+     px の上限（clamp の第3引数）で4Kだけ小さく見える事故も起きない。
+     9:16 より «低い» 画面（4:3 など）では vh 側が効いて、箱ごと縮む。
+     縦向きの各ブロックは末尾の「縦向き（サイネージ本番）」にまとめてある */
   :root{
-    --ticker-h:clamp(46px, 8vh, 62px);
-    --wheel:min(92vw, calc(47vh - var(--ticker-h) * 0.5));
+    --u:min(1vw, 0.5625vh);
+    --ticker-h:calc(var(--u) * 13);
+    --wheel:calc(var(--u) * 110);
   }
 }
 
@@ -366,16 +371,7 @@ body.impact #frame{ animation:impact-shake 460ms cubic-bezier(.36,.07,.19,.97) b
   align-items:flex-start;
   gap:clamp(14px, 2.6vmin, 30px);
 }
-@media (orientation: portrait){
-  #panel{
-    max-width:min(46ch, 92vw);
-    align-items:center;
-    text-align:center;
-  }
-}
-
 #brand{ display:flex; flex-direction:column; gap:6px; }
-@media (orientation: portrait){ #brand{ align-items:center; } }
 
 #logo{
   display:block;
@@ -487,11 +483,6 @@ body[data-state="spinning"] #ticker{ opacity:0.30; }
   font-style:normal;
   font-size:clamp(11px, 1.5vmin, 16px);
   color:var(--ink-dim);
-}
-@media (orientation: portrait){
-  .tk-plate{ display:none; }
-  .tk-txt i{ display:none; }
-  .tk{ padding:0 clamp(14px, 4vw, 26px); }
 }
 
 /* 操作ボタン。丸い飴玉ではなく、真鍮の細い罫で囲った帯にする */
@@ -995,6 +986,28 @@ body.result-peek #btn-reopen{ display:block; }
   overflow:hidden;
 }
 .cc-plate img{ width:84%; height:84%; object-fit:contain; display:block; }
+/* 絵が未着の品目（js は空の台を作る）。台ごと隠すと絵ありのカードと高さが食い違うので、
+   同じ大きさの台を残し、中に «準備中» と出す。内側の破線の環で «空き» ではなく «意図した表示» に見せる */
+.cc-plate:empty,.rl-plate:empty{
+  position:relative;
+  color:#8C8270;
+  font-family:var(--font-display);
+  font-weight:700;
+  letter-spacing:0.14em;
+  text-indent:0.14em;
+  line-height:1;
+  white-space:nowrap;
+}
+.cc-plate:empty::before,.rl-plate:empty::before{
+  content:"";
+  position:absolute;
+  inset:9%;
+  border-radius:50%;
+  border:1px dashed rgba(140,130,112,0.55);
+}
+.cc-plate:empty::after,.rl-plate:empty::after{ content:"準備中"; }
+.cc-plate:empty{ font-size:clamp(11px, calc(var(--pl, 128px) * 0.13), 40px); }
+.rl-plate:empty{ font-size:clamp(9px, 1.3vmin, 13px); letter-spacing:0.04em; text-indent:0.04em; }
 .cc b{
   font-family:var(--font-display);
   font-weight:700;
@@ -1032,22 +1045,7 @@ body.result-peek #btn-reopen{ display:block; }
   font-size:clamp(15px, calc(var(--cw, 160px) * 0.135), 36px);
   line-height:1.3;
 }
-/* 縦向きは運用外。横に並べきれないので折り返しを許し、幅は画面幅から取る */
-@media (orientation: portrait){
-  .cc i{ display:none; }
-  #choose-grid{ flex-wrap:wrap; }
-  /* 縦向きは横に余りが無いので、絵はカード幅いっぱいまで使う。
-     --pl は .nN と同じ詳細度で書かないと、横向き用の 0.62 に負ける */
-  #choose-grid.n1{ --cw:min(var(--avail), 60vw, 340px);
-                   --pl:calc(var(--cw) * 0.82); }
-  #choose-grid.n2,
-  #choose-grid.n3{ --cw:min(calc((var(--avail) - var(--gap)) / 2), 44vw, 260px);
-                   --pl:calc(var(--cw) * 0.82); }
-  #choose-grid.n4,
-  #choose-grid.n5,
-  #choose-grid.n6{ --cw:min(calc((var(--avail) - var(--gap) * 2) / 3), 30vw, 210px);
-                   --pl:calc(var(--cw) * 0.86); }
-}
+/* 縦向きの選択画面は、末尾の「縦向き（サイネージ本番）」で組む */
 
 /* 極端に低い画面（分割表示など。運用外だが崩さない）。
    一言を落とすだけで、カード1枚あたり45px前後の高さが浮く */
@@ -1172,3 +1170,211 @@ body.bright .cc{ background:linear-gradient(#241F1A, #191512); border-color:#5E5
 
 #settings-root{ display:none; }
 body.settings-open #settings-root{ display:block; }
+
+/* ====================================================================
+   縦向き（サイネージ本番） — Dahua DHI-LDV55-SAI400TL 55型 縦置き 2160x3840
+   --------------------------------------------------------------------
+   来場者は画面から1〜3m離れて見る。盤・抽選ボタン・品名・選択カードを遠目で読ませる。
+
+   寸法は全部 calc(N * var(--u))。--u は 9:16 の箱に収めたときの 1/100 の幅
+   （= min(1vw, 0.5625vh)）。
+   ・CSS viewport が 1080x1920 でも 2160x3840 でも、同じ比率で同じ見た目になる
+   ・clamp(…px) の上限に頼らない（頼ると 2160 幅のときだけ字が小さく見える）
+   ・9:16 より低い画面（4:3 など）では vh 側が効き、箱ごと縮んで縦に収まる
+   【禁止】選択画面・結果まわりに vmin を使わない（横向きタブレットでは «高さ» になり字が張りつく）。
+   横向きの見た目はここでは一切触らない（すべて portrait の中）。
+   ==================================================================== */
+@media (orientation: portrait){
+
+  /* ---- 盤とパネル ---- */
+  #frame{
+    gap:0;
+    justify-content:center;
+    padding:calc(var(--u) * 3);
+    padding-bottom:calc(var(--ticker-h) + var(--u) * 3);
+  }
+  /* 操作パネルは盤の真下。盤の外周に 8% の余白があるので gap は要らない */
+  #panel{
+    flex:0 0 auto;
+    width:calc(var(--u) * 94);
+    max-width:none;
+    align-items:center;
+    text-align:center;
+    gap:calc(var(--u) * 2.6);
+    margin-top:calc(var(--u) * -2);
+  }
+  /* 抽選ボタンを盤の直下に。ロゴは «足元の署名» に回す */
+  #btn-start{ order:1; }
+  #hint{ order:2; }
+  #brand{ order:3; align-items:center; gap:calc(var(--u) * 0.9); margin-top:calc(var(--u) * 1.4); }
+
+  #logo{ width:calc(var(--u) * 26); }
+  #eyebrow{
+    font-size:calc(var(--u) * 2.6);
+    letter-spacing:0.42em;
+    text-indent:0.42em;
+  }
+  #btn-start{
+    width:100%;
+    min-height:calc(var(--u) * 17);
+    padding:0 calc(var(--u) * 4);
+    font-size:calc(var(--u) * 7.6);
+    box-shadow:0 calc(var(--u) * 0.6) calc(var(--u) * 2.2) rgba(201,162,75,0.28);
+  }
+  #hint{
+    font-size:calc(var(--u) * 3.8);
+    letter-spacing:0.14em;
+  }
+
+  /* ---- 下端の帯。縦は太くして、絵も出す（横向きは絵＋品名＋一言） ---- */
+  #ticker{ height:var(--ticker-h); }
+  #ticker-label{
+    padding:0 calc(var(--u) * 2.4);
+    font-size:calc(var(--u) * 3.4);
+    letter-spacing:0.12em;
+    text-indent:0.12em;
+  }
+  .tk{
+    gap:calc(var(--u) * 2);
+    padding:0 calc(var(--u) * 4);
+  }
+  .tk-plate{ width:calc(var(--u) * 9.2); height:calc(var(--u) * 9.2); }
+  .tk-txt b{ font-size:calc(var(--u) * 4.8); }
+  .tk-txt i{ display:none; }
+
+  /* 停止時の縁の炎。px の上限で 4K だけ細くならないよう u で組み直す */
+  #edge{
+    box-shadow:
+      inset 0 0 calc(var(--u) * 2) calc(var(--u) * 0.5) rgba(255,244,214,0.95),
+      inset 0 0 calc(var(--u) * 9) calc(var(--u) * 2.6) rgba(255,208,110,0.92),
+      inset 0 0 calc(var(--u) * 32) rgba(255,150,44,0.46);
+  }
+
+  /* ---- オーバーレイ共通 ---- */
+  #overlay-boot,#overlay-result,#overlay-finished,#overlay-jackpot{ padding:calc(var(--u) * 4); }
+  .boot-inner{ gap:calc(var(--u) * 7); }
+  .boot-logo{ width:calc(var(--u) * 42); }
+  #overlay-boot p{ font-size:calc(var(--u) * 4.6); }
+  #overlay-finished p{ font-size:calc(var(--u) * 7.6); }
+
+  /* ---- 結果。品名が主役・等級は添え物のまま。絵を大きく ---- */
+  .result-inner{ gap:calc(var(--u) * 2.6); max-width:calc(var(--u) * 94); }
+  #result-plate{
+    width:calc(var(--u) * 66);
+    box-shadow:0 calc(var(--u) * 1.6) calc(var(--u) * 4) rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.55);
+  }
+  #result-rank{ font-size:calc(var(--u) * 4.6); }
+  #result-item{
+    font-size:calc(var(--u) * 8.8);
+    max-width:calc(var(--u) * 94);
+  }
+  #result-item.len-m{ font-size:calc(var(--u) * 7.6); }
+  #result-item.len-l{ font-size:calc(var(--u) * 6.4); }
+  #result-note{
+    font-size:calc(var(--u) * 3.8);
+    max-width:calc(var(--u) * 88);
+    margin-top:calc(var(--u) * -0.6);
+  }
+  #result-actions{ gap:calc(var(--u) * 3); margin-top:calc(var(--u) * 2); }
+  #btn-next{
+    min-height:calc(var(--u) * 12.5);
+    padding:0 calc(var(--u) * 8);
+    font-size:calc(var(--u) * 5);
+  }
+  #btn-close{
+    min-height:calc(var(--u) * 10);
+    padding:0 calc(var(--u) * 5);
+    font-size:calc(var(--u) * 3.6);
+  }
+  #btn-reopen{
+    bottom:calc(var(--u) * 4);
+    min-height:calc(var(--u) * 10);
+    padding:0 calc(var(--u) * 6);
+    font-size:calc(var(--u) * 3.8);
+  }
+  /* 特賞で複数個 */
+  body.multi #result-list{
+    gap:calc(var(--u) * 1.6);
+    margin-top:calc(var(--u) * 1);
+    min-width:calc(var(--u) * 86);
+  }
+  .rl{ gap:calc(var(--u) * 3); padding:calc(var(--u) * 1.6) calc(var(--u) * 3); }
+  .rl-plate{ width:calc(var(--u) * 13); }
+  .rl-plate:empty{ font-size:calc(var(--u) * 2.4); }
+  .rl b{ font-size:calc(var(--u) * 5); }
+  .rl em{ font-size:calc(var(--u) * 5.6); }
+
+  /* ---- 特賞の幕 ---- */
+  .jp-inner{ gap:calc(var(--u) * 4); max-width:calc(var(--u) * 94); }
+  .jp-mark{ font-size:calc(var(--u) * 38); filter:drop-shadow(0 0 calc(var(--u) * 5) rgba(242,194,48,0.55)); }
+  .jp-lead{ font-size:calc(var(--u) * 5); }
+  #btn-bonus{
+    min-height:calc(var(--u) * 16);
+    padding:0 calc(var(--u) * 10);
+    font-size:calc(var(--u) * 6.2);
+  }
+
+  /* ---- 選択画面 ----
+     9:16 の箱（100u x 177.8u）に縦積みする。
+     見出し・説明・余白で約 31u を使い、残り約 146u がカードの置き場（G）。
+       n1 : 1枚を大きく（選べない画面なので実際は出ないが、崩さない）
+       n2 : 大きなカードを2枚縦積み。絵を最大にする（来場者の約6割がここに来る）
+       n3〜n6 : 1列の横長カード（絵が左・品名が右）。2列にすると品名が3行に割れる
+     一言は落とす。遠目で読むのは絵と品名だけ */
+  #overlay-choose{ padding:calc(var(--u) * 4) calc(var(--u) * 3); }
+  .ch-inner{ gap:calc(var(--u) * 2); max-width:calc(var(--u) * 100); }
+  #choose-head{ font-size:calc(var(--u) * 8); }
+  #choose-sub{ font-size:calc(var(--u) * 4.2); }
+  #choose-timer{ width:calc(var(--u) * 70); height:calc(var(--u) * 0.6); margin-top:calc(var(--u) * 0.6); }
+
+  #choose-grid{
+    --gap:calc(var(--u) * 2.6);
+    flex-direction:column;
+    flex-wrap:nowrap;
+    align-items:center;
+    gap:var(--gap);
+    margin-top:calc(var(--u) * 0.4);
+  }
+  #choose-grid .cc{
+    flex:0 0 auto;
+    width:calc(var(--u) * 94);
+    min-width:0;
+    flex-direction:column;
+    justify-content:center;
+    padding:calc(var(--u) * 2.5) calc(var(--u) * 2.5);
+    gap:calc(var(--u) * 2);
+    border-radius:calc(var(--u) * 0.4);
+  }
+  #choose-grid .cc .cc-plate{
+    flex:0 0 auto;
+    width:var(--pl);
+    box-shadow:0 calc(var(--u) * 0.8) calc(var(--u) * 2.4) rgba(0,0,0,0.55);
+  }
+  #choose-grid .cc .cc-plate:empty{ font-size:calc(var(--pl) * 0.13); }
+  /* .dense 側の (1,2,1) に負けないよう [class] で詳細度を揃え、あとから書いて勝たせる */
+  #choose-grid[class] > .cc > b{
+    font-size:var(--f);
+    line-height:1.3;
+    letter-spacing:0.02em;
+  }
+  #choose-grid .cc i{ display:none; }
+
+  #choose-grid.n1{ --pl:calc(var(--u) * 70); --f:calc(var(--u) * 9); }
+  #choose-grid.n2{ --pl:calc(var(--u) * 44); --f:calc(var(--u) * 7); }
+
+  /* 3枚以上は横長カード */
+  #choose-grid.n3 .cc,#choose-grid.n4 .cc,#choose-grid.n5 .cc,#choose-grid.n6 .cc{
+    flex-direction:row;
+    justify-content:flex-start;
+    text-align:left;
+    gap:calc(var(--u) * 3);
+  }
+  #choose-grid[class] > .cc > b{ min-width:0; }
+  #choose-grid.n3 > .cc > b,#choose-grid.n4 > .cc > b,#choose-grid.n5 > .cc > b,#choose-grid.n6 > .cc > b{ flex:1 1 0; }
+  #choose-grid.n3{ --pl:calc(var(--u) * 38); --f:calc(var(--u) * 6.6); }
+  #choose-grid.n4{ --pl:calc(var(--u) * 30); --f:calc(var(--u) * 6);   --gap:calc(var(--u) * 2.4); }
+  #choose-grid.n5{ --pl:calc(var(--u) * 23); --f:calc(var(--u) * 5.4); --gap:calc(var(--u) * 2); }
+  #choose-grid.n6{ --pl:calc(var(--u) * 19); --f:calc(var(--u) * 5);   --gap:calc(var(--u) * 2); }
+  #choose-grid.n4 .cc{ padding:calc(var(--u) * 2) calc(var(--u) * 2.5); }
+  #choose-grid.n5 .cc,#choose-grid.n6 .cc{ padding:calc(var(--u) * 1.6) calc(var(--u) * 2.5); }
+}

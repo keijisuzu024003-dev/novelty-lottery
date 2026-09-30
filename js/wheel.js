@@ -15,6 +15,44 @@ window.NV = window.NV || {};
   // ここでも同じスタックを書く。読み込み完了後に再描画する必要がある（app.js を参照）
   var DISPLAY_FONT = '"Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN",serif';
 
+  // ---- 性能計測・DPR 決定（wheel.js / confetti.js / settings.js が共有）----
+  // 実機（Dahua 55型 2160x3840・A55 4コア）で 4K の canvas を毎フレーム描くと重いので、
+  // canvas の実ピクセル数に予算を設ける。CSS座標系は変えず、バッキングストアだけを間引く。
+  // fps は既存の rAF ループ（円盤の自転・紙吹雪）が tick() を呼ぶだけ。専用の rAF は回さない。
+  var perf = {
+    _last: 0, _ring: [], _lastWall: 0,
+    wheelInfo: null,   // { cssW, cssH, dpr, pxW, pxH }（円盤）
+    confettiInfo: null,
+    // css 幅×高さに対し、上限 maxDpr・ピクセル数 budget・下限 floor で DPR を決める
+    pickDpr: function (cssW, cssH, maxDpr, budget, floor) {
+      var d = Math.min(maxDpr, window.devicePixelRatio || 1);
+      var area = Math.max(1, cssW * cssH);
+      d = Math.min(d, Math.sqrt(budget / area));
+      return Math.max(floor, d);
+    },
+    tick: function (ts) {
+      try {
+        if (this._last && ts - this._last > 250) { this._ring.length = 0; } // 停止をまたいだ間隔は捨てる
+        if (this._last && ts > this._last) {
+          this._ring.push(ts - this._last);
+          if (this._ring.length > 60) this._ring.shift();
+        }
+        this._last = ts;
+        this._lastWall = Date.now();
+      } catch (e) {}
+    },
+    // 直近約60フレームの平均 fps。ループが止まっている・サンプル不足なら null
+    fps: function () {
+      try {
+        if (Date.now() - this._lastWall > 1000 || this._ring.length < 10) return null;
+        var sum = 0;
+        for (var i = 0; i < this._ring.length; i++) sum += this._ring[i];
+        return sum > 0 ? 1000 * this._ring.length / sum : null;
+      } catch (e) { return null; }
+    }
+  };
+  window.NV.perf = perf;
+
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
@@ -281,12 +319,17 @@ window.NV = window.NV || {};
       var rect = canvas.getBoundingClientRect();
       var w = rect.width || canvas.clientWidth || 300;
       var h = rect.height || canvas.clientHeight || 300;
-      // DPR3のタブレットで描画が重くならないよう上限2で切る
-      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      // DPR 上限 1.5、実ピクセル数の予算 250万px（≒1580x1580）、下限 0.75。
+      // 想定端末: 1080x1920@2 → 円盤≒1000css、1.5 で 225万px。
+      //           2160x3840@1 → 円盤≒2000css、予算で 0.79（≒158万px四方）。
+      //           DPR3 のタブレットも 1.5 で切る。盤面は細い線と文字だけなので 1.5 倍で十分読める。
+      // 下限 0.75 は CSS で拡大されてもぼやけを許容できる線。毎フレーム描く（自転）ので px 数が効く
+      var dpr = perf.pickDpr(w, h, 1.5, 2500000, 0.75);
       this.cssW = w;
       this.cssH = h;
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
+      perf.wheelInfo = { cssW: w, cssH: h, dpr: dpr, pxW: canvas.width, pxH: canvas.height };
       this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       this.render();
     } catch (e) {
@@ -491,6 +534,7 @@ window.NV = window.NV || {};
     if (this._lastTs == null) this._lastTs = ts;
     var dt = Math.min(0.1, (ts - this._lastTs) / 1000);
     this._lastTs = ts;
+    perf.tick(ts);
     // 90Hz 端末（Redmi Pad 2）では1フレームの進み幅が 60Hz の 2/3 になる。
     // 残像や速度をフレーム単位で測ると端末ごとに見え方が変わるので、秒あたりに直す
     this._dt = dt > 0 ? dt : (1 / 60);

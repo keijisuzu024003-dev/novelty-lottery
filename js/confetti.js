@@ -14,7 +14,9 @@ window.NV = window.NV || {};
 
   var GRAVITY = 900; // px/sec^2
   var DRAG = 0.55;   // 空気抵抗（速度に比例して減速）
-  var MAX_DPR = 2;   // 高DPR端末での過剰負荷を防ぐ上限
+  // 全画面 canvas なので px 数が支配的。DPR 上限 1.5、実ピクセル数の予算 200万px、下限 0.5。
+  // 1080x1920@2 → 0.98（≒207万px）、2160x3840@1 → 0.5（≒207万px）。
+  // 紙吹雪は動くリボンで細部を見られないため、円盤(250万px)より粗くてよい
 
   var canvas = null;
   var cx = null;
@@ -33,12 +35,14 @@ window.NV = window.NV || {};
   function resize() {
     if (!canvas) return;
     try {
-      dpr = clamp(window.devicePixelRatio || 1, 1, MAX_DPR);
       cssW = canvas.clientWidth || window.innerWidth;
       cssH = canvas.clientHeight || window.innerHeight;
+      dpr = (NV.perf && NV.perf.pickDpr) ? NV.perf.pickDpr(cssW, cssH, 1.5, 2000000, 0.5)
+        : clamp(window.devicePixelRatio || 1, 1, 1.5);
       canvas.width = Math.max(1, Math.round(cssW * dpr));
       canvas.height = Math.max(1, Math.round(cssH * dpr));
       if (cx) cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (NV.perf) NV.perf.confettiInfo = { dpr: dpr, pxW: canvas.width, pxH: canvas.height };
     } catch (e) {}
   }
 
@@ -204,6 +208,7 @@ window.NV = window.NV || {};
   function step(t) {
     try {
       if (!cx || !canvas) { rafId = null; return; }
+      if (NV.perf) NV.perf.tick(t);
       if (!lastT) lastT = t;
       var dt = Math.min(0.04, (t - lastT) / 1000); // タブ切替直後の巨大dtを防ぐ
       lastT = t;

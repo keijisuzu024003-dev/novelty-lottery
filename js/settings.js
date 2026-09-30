@@ -458,6 +458,33 @@ window.NV = window.NV || {};
     } catch (e) {}
   }
 
+  // 端末診断。実機で読み上げて報告してもらう用。1秒ごとに更新し、閉じたら止める
+  var perfTimer = null;
+  function showPerfState() {
+    try {
+      var el = document.querySelector('[data-role="perf-state"]');
+      if (!el) { stopPerfTimer(); return; }
+      var P = NV.perf || {};
+      var wi = P.wheelInfo;
+      var dpr = window.devicePixelRatio || 1;
+      var fps = P.fps ? P.fps() : null;
+      var l1 = "画面 " + window.innerWidth + "×" + window.innerHeight + "（CSS px）／DPR " + (Math.round(dpr * 100) / 100);
+      var l2 = "円盤canvas " + (wi ? (wi.pxW + "×" + wi.pxH + "（DPR " + (Math.round(wi.dpr * 100) / 100) + "）") : "未描画")
+        + "／実測 " + (fps == null ? "計測中" : (Math.round(fps * 10) / 10) + " fps");
+      el.textContent = l1 + "\n" + l2;
+    } catch (e) {}
+  }
+  function startPerfTimer() {
+    try {
+      stopPerfTimer();
+      showPerfState();
+      perfTimer = setInterval(showPerfState, 1000);
+    } catch (e) {}
+  }
+  function stopPerfTimer() {
+    if (perfTimer != null) { clearInterval(perfTimer); perfTimer = null; }
+  }
+
   function renderSettingsBody() {
     var r = getRoot();
     if (!r) return;
@@ -492,6 +519,9 @@ window.NV = window.NV || {};
             '<input type="checkbox" data-action="set-sound" style="width:22px;height:22px;">' +
             '<button type="button" class="nvs-btn" data-action="test-sound">音をテスト</button>' +
             '<span class="nvs-muted" data-role="sound-state"></span>' +
+          '</div>' +
+          '<div class="nvs-row">' +
+            '<span class="nvs-muted" data-role="perf-state" style="white-space:pre-line;line-height:1.5;"></span>' +
           '</div>' +
           '<div class="nvs-row nvs-toggle-row">' +
             '<label class="nvs-label" style="min-width:auto;">音量</label>' +
@@ -573,6 +603,7 @@ window.NV = window.NV || {};
 
     refreshBoard();
     showSoundState();
+    startPerfTimer();
 
     var ranksWrap = r.querySelector('[data-role="ranks"]');
     var ranks = state.ranks || [];
@@ -834,6 +865,7 @@ window.NV = window.NV || {};
   }
 
   function closeInternal() {
+    stopPerfTimer();
     var r = getRoot();
     if (r) r.innerHTML = "";
     document.body.classList.remove("settings-open");
