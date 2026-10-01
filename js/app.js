@@ -1131,6 +1131,27 @@ window.NV = window.NV || {};
     try { NV.sound.init(); NV.sound.resume(); } catch (e) {}
   }
 
+  // サイネージ（Dahua・Google Play なし）の Chrome には «ホーム画面に追加» が出ず、
+  // PWA の全画面起動が使えない。タブのままだとアドレスバーと端末のナビバーが残るので、
+  // 触られたら Fullscreen API で全画面へ入れ直す。
+  // - 全画面の要求には «ユーザー操作の最中» が要る。タッチでそれが立つのは pointerup（pointerdown では立たない）
+  // - ファイル選択画面などで全画面が解けても、次のタップで戻る
+  // - マウス操作（PC で確認するとき）では勝手に全画面にしない
+  // - ホーム画面から起動した PWA は最初から全画面なので何もしない
+  function nudgeFullscreen(ev){
+    try {
+      if (ev && ev.pointerType === 'mouse') { return; }
+      if (document.fullscreenElement || document.webkitFullscreenElement) { return; }
+      if (window.matchMedia && (window.matchMedia('(display-mode: fullscreen)').matches ||
+                                window.matchMedia('(display-mode: standalone)').matches)) { return; }
+      var root = document.documentElement;
+      var req = root.requestFullscreen || root.webkitRequestFullscreen;
+      if (!req) { return; }
+      var p = req.call(root, { navigationUI: 'hide' });
+      if (p && p.catch) { p.catch(function(){}); }
+    } catch (e) {}
+  }
+
   function setPeek(on){
     if (!el.body) { return; }
     if (el.body.dataset.state !== 'result') { on = false; }
@@ -1335,6 +1356,7 @@ window.NV = window.NV || {};
 
     // ユーザー操作のたびに音を起こし直す（capture で確実に拾う）
     document.addEventListener('pointerdown', nudgeAudio, true);
+    document.addEventListener('pointerup', nudgeFullscreen, true);
 
     document.addEventListener('keydown', function(ev){
       if (ev.code !== 'Space' && ev.code !== 'Enter') { return; }
