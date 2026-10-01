@@ -5,7 +5,7 @@
 //
 // 【更新するときは必ずこの CACHE_NAME の数字を1つ上げること。js/defaults.js の APP_VERSION も同じ番号に上げる（両方）】
 // 上げないと、古いキャッシュがそのまま使われ続けて画面が更新されない。
-const CACHE_NAME = 'novelty-lottery-v21';
+const CACHE_NAME = 'novelty-lottery-v22';
 
 // プリキャッシュ対象。相対パス（"./" 起点）で統一する。
 // GitHub Pages のサブディレクトリ配下でも動くよう、絶対パスは使わない。

@@ -55,6 +55,9 @@ window.NV = window.NV || {};
     // 品目の一言（特長）。画像と同じく会場データJSON にだけ入っている。
     // ここで落とすと結果画面から一言が消える
     if (typeof raw.note === "string" && raw.note) { out.note = raw.note; }
+    // 改行してよい位置（品名を "|" で区切った文字列）。これも落とすと品名が中途半端な位置で折れる。
+    // 表示側は «"|" を除くと name に一致するとき» だけ使う（SPEC の item.wrap）
+    if (typeof raw.wrap === "string" && raw.wrap) { out.wrap = raw.wrap; }
     return out;
   }
 

@@ -451,6 +451,10 @@ body[data-state="spinning"] #ticker{ opacity:0.30; }
 }
 @media (prefers-reduced-motion: reduce){ #ticker-track{ animation:none; } }
 
+/* 品名の «折ってよい位置» ごとのかたまり（app.js setName）。かたまりの中は途中で切らない。
+   かたまり自体が1行より長いときだけ中で折れる */
+.nb{ display:inline-block; }
+
 .tk{
   display:flex;
   align-items:center;

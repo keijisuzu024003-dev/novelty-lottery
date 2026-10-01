@@ -45,6 +45,34 @@ window.NV = window.NV || {};
 
   var el = {};
 
+  // 品名を DOM に入れる。item.wrap（"|" 区切り）があり、"|" を除くと name と一致するときだけ、
+  // 区切りごとを inline-block の <span class="nb"> で包む（Chrome 98 は text-wrap:balance を
+  // 知らないので、折ってよい位置を DOM で教える）。一致しない・無いときは name をそのまま。
+  // textContent / createTextNode だけを使う（品名を HTML として解釈させない）
+  function setName(node, name, wrap){
+    node.textContent = '';
+    var nm = String(name == null ? '' : name);
+    if (typeof wrap === 'string' && wrap && wrap.split('|').join('') === nm) {
+      var parts = wrap.split('|');
+      for (var i = 0; i < parts.length; i++) {
+        if (!parts[i]) { continue; }
+        // 区切りの端にある空白（"…ー 390ml" の半角空白）は span の外に出す。
+        // inline-block の中に残すと、同じ行に並んだときに行末扱いで潰れて空白が消える
+        var m = /^(\s*)([\s\S]*?)(\s*)$/.exec(parts[i]);
+        if (m[1]) { node.appendChild(document.createTextNode(' ')); }
+        if (m[2]) {
+          var s = document.createElement('span');
+          s.className = 'nb';
+          s.appendChild(document.createTextNode(m[2]));
+          node.appendChild(s);
+        }
+        if (m[3]) { node.appendChild(document.createTextNode(' ')); }
+      }
+    } else {
+      node.textContent = nm;
+    }
+  }
+
   // 1回ぶんの抽選。等級が決まってから、品目を選び終えるまでを持つ。
   //   { rankId, rankLabel, rank0, jackpot, need, picked: [item...] }
   // 【重要】品目が決まるまで在庫は減らさない。減らすのは commitItem を呼ぶ瞬間だけ
@@ -651,7 +679,7 @@ window.NV = window.NV || {};
     b.appendChild(plate);
 
     var name = document.createElement('b');
-    name.textContent = item.name;
+    setName(name, item.name, item.wrap);
     b.appendChild(name);
 
     if (item.note) {
@@ -713,7 +741,7 @@ window.NV = window.NV || {};
 
     round.picked.push({
       id: found.item.id, name: found.item.name,
-      image: found.item.image, note: found.item.note,
+      image: found.item.image, note: found.item.note, wrap: found.item.wrap,
       rankLabel: found.rank.label
     });
     try { NV.storage.save(state); } catch (e) {}
@@ -783,7 +811,7 @@ window.NV = window.NV || {};
         }
       }
       if (el.resultItem) {
-        el.resultItem.textContent = it.name;
+        setName(el.resultItem, it.name, it.wrap);
         // 品目名は20文字前後になることがある。
         // 文字数で段階的に縮めて、2行に収まる大きさにする（遠目に読めることが最優先なので
         // 縮めすぎない。折り返しの見た目は CSS の text-wrap:balance に任せる）
@@ -830,7 +858,7 @@ window.NV = window.NV || {};
       }
       row.appendChild(plate);
       var name = document.createElement('b');
-      name.textContent = groups[k].item.name;
+      setName(name, groups[k].item.name, groups[k].item.wrap);
       row.appendChild(name);
       if (groups[k].n > 1) {
         var mult = document.createElement('em');
@@ -946,7 +974,7 @@ window.NV = window.NV || {};
       var items = ranks[i].items || [];
       for (var j = 0; j < items.length; j++) {
         if (Number(items[j].stock) > 0) {
-          out.push({ name: items[j].name, image: items[j].image, note: items[j].note });
+          out.push({ name: items[j].name, image: items[j].image, note: items[j].note, wrap: items[j].wrap });
         }
       }
     }
@@ -968,7 +996,7 @@ window.NV = window.NV || {};
     var txt = document.createElement('span');
     txt.className = 'tk-txt';
     var b = document.createElement('b');
-    b.textContent = p.name;
+    setName(b, p.name, p.wrap);
     txt.appendChild(b);
     if (p.note) {
       var note = document.createElement('i');
