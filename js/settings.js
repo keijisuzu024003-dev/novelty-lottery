@@ -48,7 +48,7 @@ window.NV = window.NV || {};
       "#settings-root{display:none;}" +
       "body.settings-open #settings-root{display:block;}" +
       "#settings-root, #settings-root *{box-sizing:border-box;}" +
-      ".nvs-overlay{position:fixed;inset:0;background:rgba(6,5,4,0.82);z-index:9000;" +
+      ".nvs-overlay{position:fixed;inset:0;background:#060504;z-index:9000;" +
         "display:flex;align-items:center;justify-content:center;padding:16px;" +
         "font-family:'Noto Sans JP','Hiragino Sans',system-ui,sans-serif;}" +
       ".nvs-panel{background:#131110;color:#F4EFE4;width:min(96vw,880px);max-height:92vh;" +
@@ -71,6 +71,9 @@ window.NV = window.NV || {};
       ".nvs-rank-card{border:1px solid #3A342B;border-radius:3px;padding:12px;margin:10px 0;background:#181513;}" +
       ".nvs-item-row{display:flex;align-items:center;gap:8px;margin:6px 0;padding:6px;background:#0E0D0B;border-radius:2px;flex-wrap:wrap;}" +
       ".nvs-muted{color:#9A9081;font-size:12px;}" +
+      ".nvs-ver{margin:0 0 6px;padding:10px 14px;background:#17140F;border:1px solid #3A342B;border-radius:4px;}" +
+      ".nvs-ver-mode{font-size:15px;font-weight:700;color:#F4EFE4;}" +
+      ".nvs-ver-num{font-size:15px;font-weight:700;color:#C9A24B;min-width:64px;}" +
       // 配布状況ボード。スクロールせずに «いまどうなっているか» だけ読めるようにする
       ".nvs-board{margin:0 0 18px;padding:14px 16px 16px;background:#17140F;border:1px solid #3A342B;border-radius:4px;}" +
       ".nvs-board-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px;}" +
@@ -351,6 +354,10 @@ window.NV = window.NV || {};
       '</div>';
   }
 
+  function appVersion() {
+    try { return (NV.defaults && NV.defaults.APP_VERSION) || "不明"; } catch (e) { return "不明"; }
+  }
+
   function refreshBoard() {
     try {
       var root = document.querySelector('[data-role="board"]');
@@ -471,12 +478,11 @@ window.NV = window.NV || {};
       var l1 = "画面 " + window.innerWidth + "×" + window.innerHeight + "（CSS px）／DPR " + (Math.round(dpr * 100) / 100);
       var l2 = "円盤canvas " + (wi ? (wi.pxW + "×" + wi.pxH + "（DPR " + (Math.round(wi.dpr * 100) / 100) + "）") : "未描画")
         + "／実測 " + (fps == null ? "計測中" : (Math.round(fps * 10) / 10) + " fps");
-      var l3 = "";
-      try {
-        var ps = (NV.app && NV.app.perfStatus) ? NV.app.perfStatus() : null;
-        if (ps) l3 = "\n描画: " + ps.text;
-      } catch (e) {}
-      el.textContent = l1 + "\n" + l2 + l3;
+      var ps = null;
+      try { ps = (NV.app && NV.app.perfStatus) ? NV.app.perfStatus() : null; } catch (e) {}
+      var me = document.querySelector('[data-role="mode-state"]');
+      if (me) me.textContent = ps ? ("描画: " + ps.text) : "";
+      el.textContent = l1 + "\n" + l2;
     } catch (e) {}
   }
   function startPerfTimer() {
@@ -510,6 +516,14 @@ window.NV = window.NV || {};
           '<div class="nvs-msg" id="nvs-msg"></div>' +
 
           statusBoardHtml() +
+          '<div class="nvs-ver">' +
+            '<div class="nvs-ver-mode" data-role="mode-state"></div>' +
+            '<div class="nvs-row" style="margin:6px 0 0;">' +
+              '<span class="nvs-ver-num">版 ' + esc(appVersion()) + '</span>' +
+              '<button type="button" class="nvs-btn secondary" data-action="check-update">最新版に更新</button>' +
+              '<span class="nvs-muted" data-role="update-msg"></span>' +
+            '</div>' +
+          '</div>' +
           '<div class="nvs-h2">会場</div>' +
           '<div class="nvs-row">' +
             '<select class="nvs-input" data-action="set-venue">' + venueOptions + '</select>' +
@@ -653,6 +667,21 @@ window.NV = window.NV || {};
 
     if (action === "close") {
       closeInternal();
+      return;
+    }
+
+    if (action === "check-update") {
+      var um = document.querySelector('[data-role="update-msg"]');
+      if (um) um.textContent = "確認中…";
+      try {
+        NV.app.checkUpdate().then(function (res) {
+          var m = document.querySelector('[data-role="update-msg"]');
+          if (!m) return;
+          m.textContent = res === "applied" ? "新しい版を適用します。再読み込みします…"
+            : res === "latest" ? "最新です（" + appVersion() + "）"
+            : "確認できませんでした（オフライン?）";
+        });
+      } catch (e2) { if (um) um.textContent = "確認できませんでした"; }
       return;
     }
 

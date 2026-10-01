@@ -114,6 +114,7 @@ window.NV = window.NV || {};
     if (name === 'idle') { buildTicker(); perf.idleSince = Date.now(); }
     if (name !== 'choosing') { clearChooseTimer(); }
     syncRays();
+    if (name === 'idle' || name === 'boot') { tryApplyUpdate(); }
   }
 
   function clearAutoAdvance(){
@@ -180,6 +181,7 @@ window.NV = window.NV || {};
     bindEvents();
     requestWakeLock();
     registerServiceWorker();
+    watchSettingsOpen();
 
     setState('boot');
   }
@@ -1078,12 +1080,14 @@ window.NV = window.NV || {};
   }
 
   function ensureRays(){
+    if (settingsOpen) { return; }
     if (rays.raf || prefersReducedMotion || perf.lite || !el.rays) { return; }
     rays.last = 0;
     rays.raf = requestAnimationFrame(rayStep);
   }
 
   function rayStep(ts){
+    if (settingsOpen) { rays.raf = null; rays.last = 0; return; }
     if (perf.lite) { rays.raf = null; rays.last = 0; return; }
     var dt = rays.last ? Math.min(0.05, (ts - rays.last) / 1000) : 0.016;
     rays.last = ts;
@@ -1431,12 +1435,116 @@ window.NV = window.NV || {};
   // Service Worker（sw.js は別担当。無くても/失敗しても無視する）
   // ---------------------------------------------------------------
 
-  function registerServiceWorker(){
+  var swReg = null;
+  var swUpdateRequested = false;   // SKIP_WAITING を送った（controllerchange で1回だけ reload）
+  var swReloaded = false;
+  var SW_RELOAD_KEY = 'nv-sw-reload-at';
+
+  // 設定画面を開いている間は、背後の円盤・光条・粒・帯を止める（GPU を設定画面に回す）。
+  // 設定画面側（settings.js）は body.settings-open を付け外しするだけなので、ここで監視する
+  var settingsOpen = false;
+  function syncSettingsOpen(){
+    var now = !!(el.body && el.body.classList.contains('settings-open'));
+    if (now === settingsOpen) { return; }
+    settingsOpen = now;
+    try { if (wheel) { wheel.pause(now); } } catch (e) {}
+    if (!now) {
+      syncRays();
+      tryApplyUpdate();
+    }
+  }
+  function watchSettingsOpen(){
     try {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(function(){});
+      if (window.MutationObserver) {
+        new MutationObserver(syncSettingsOpen).observe(el.body, { attributes: true, attributeFilter: ['class'] });
       }
     } catch (e) {}
+  }
+
+  function registerServiceWorker(){
+    try {
+      if (!('serviceWorker' in navigator)) { return; }
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function(){
+        // 初回インストール（以前の controller なし）や、こちらから頼んでいない切替では reload しない
+        if (!swUpdateRequested || swReloaded) { return; }
+        swReloaded = true;
+        try { sessionStorage.setItem(SW_RELOAD_KEY, String(Date.now())); } catch (e) {}
+        location.reload();
+      });
+      navigator.serviceWorker.register('sw.js').then(function(reg){
+        swReg = reg;
+        watchRegistration(reg);
+        if (hadController || reg.waiting) { tryApplyUpdate(); }
+        // 新版の有無を確かめる（オフラインで失敗しても無視）
+        try { reg.update().catch(function(){}); } catch (e) {}
+      })['catch'](function(){});
+    } catch (e) {}
+  }
+
+  function watchRegistration(reg){
+    try {
+      reg.addEventListener('updatefound', function(){
+        var w = reg.installing;
+        if (!w) { return; }
+        w.addEventListener('statechange', function(){
+          if (w.state === 'installed' && navigator.serviceWorker.controller) { tryApplyUpdate(); }
+        });
+      });
+    } catch (e) {}
+  }
+
+  // 抽選の途中では絶対に適用しない。boot / idle で、設定画面が閉じていて、処理中でないときだけ
+  function canApplyUpdateNow(){
+    var name = (el.body && el.body.dataset.state) || 'boot';
+    if (name !== 'boot' && name !== 'idle') { return false; }
+    if (isBusy || round) { return false; }
+    if (el.body.classList.contains('settings-open')) { return false; }
+    return true;
+  }
+
+  function applyWaiting(){
+    if (!swReg || !swReg.waiting) { return false; }
+    swUpdateRequested = true;
+    try { swReg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch (e) { swUpdateRequested = false; return false; }
+    return true;
+  }
+
+  function tryApplyUpdate(){
+    try {
+      if (!swReg || !swReg.waiting || swUpdateRequested) { return; }
+      if (!canApplyUpdateNow()) { return; }   // 次に idle / boot に戻ったとき setState から再試行
+      // 直前に更新リロードしたばかりなら繰り返さない（無限リロード防止）
+      var last = 0;
+      try { last = parseInt(sessionStorage.getItem(SW_RELOAD_KEY) || '0', 10) || 0; } catch (e) {}
+      if (last && Date.now() - last < 60000) { return; }
+      applyWaiting();
+    } catch (e) {}
+  }
+
+  // 設定画面の「最新版に更新」。結果: 'applied'（reload 開始）/ 'latest' / 'offline'
+  function checkUpdate(){
+    return new Promise(function(resolve){
+      try {
+        if (!swReg) { resolve('offline'); return; }
+        var done = false;
+        var finish = function(v){ if (!done) { done = true; resolve(v); } };
+        var tryNow = function(){
+          if (swReg.waiting) { finish(applyWaiting() ? 'applied' : 'latest'); return true; }
+          return false;
+        };
+        swReg.update().then(function(){
+          if (tryNow()) { return; }
+          var w = swReg.installing;
+          if (!w) { finish('latest'); return; }
+          w.addEventListener('statechange', function(){
+            if (w.state === 'installed') { if (!tryNow()) { finish('latest'); } }
+            else if (w.state === 'redundant') { finish('latest'); }
+          });
+          setTimeout(function(){ finish('latest'); }, 15000);
+        })['catch'](function(){ finish('offline'); });
+      } catch (e) { resolve('offline'); }
+    });
   }
 
   // ---------------------------------------------------------------
@@ -1538,6 +1646,7 @@ window.NV = window.NV || {};
   NV.app = NV.app || {};
   NV.app.start = start;
   NV.app.perfStatus = perfStatus;
+  NV.app.checkUpdate = checkUpdate;
 
   // モンテカルロ検証などでコンソールから現在の state を読めるようにしておく。
   // state 変数そのものへの参照を返すゲッターにして、差し替え（設定保存など）後も追従させる。

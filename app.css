@@ -1171,6 +1171,12 @@ body.bright .cc{ background:linear-gradient(#241F1A, #191512); border-color:#5E5
 #settings-root{ display:none; }
 body.settings-open #settings-root{ display:block; }
 
+/* 設定画面は不透明な全面オーバーレイ。背後は見えないので、描画・合成の対象から外して GPU を設定画面に回す。
+   （円盤・光条・粒の rAF は app.js / wheel.js 側でも止めている） */
+body.settings-open > *:not(#settings-root){ visibility:hidden !important; }
+body.settings-open #dust i,
+body.settings-open #ticker-track{ animation-play-state:paused !important; }
+
 /* ====================================================================
    縦向き（サイネージ本番） — Dahua DHI-LDV55-SAI400TL 55型 縦置き 2160x3840
    --------------------------------------------------------------------

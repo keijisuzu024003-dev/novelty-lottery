@@ -533,6 +533,12 @@ window.NV = window.NV || {};
     if (this._idle) this._ensureLoop();
   };
 
+  // 設定画面の間は描画ループを止める（回転中だけは止めない。止めると Promise が解決しない）
+  Wheel.prototype.pause = function (on) {
+    this._paused = !!on;
+    if (!this._paused) this._ensureLoop();
+  };
+
   Wheel.prototype._ensureLoop = function () {
     if (this._raf) return;
     var self = this;
@@ -542,6 +548,11 @@ window.NV = window.NV || {};
 
   Wheel.prototype._loop = function (ts) {
     var self = this;
+    if (this._paused && !this.isSpinning) {
+      this._raf = null;
+      this._lastTs = null;
+      return;
+    }
     if (this._lastTs == null) this._lastTs = ts;
     var dt = Math.min(0.1, (ts - this._lastTs) / 1000);
     this._lastTs = ts;
