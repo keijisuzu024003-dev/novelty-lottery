@@ -103,7 +103,10 @@ window.NV = window.NV || {};
         // 選択の制限時間[秒]。0 でオフ。時間切れは在庫が最も多い品目を自動で選ぶ
         chooseSec: 0,
         brightMode: false,
-        volume: 1
+        volume: 1,
+        // 描画の重さ。"auto" = 端末を見て app.js が決める／"lite" = 軽量／"full" = 通常
+        // storage.js の sanitizeSettings にも必ず同じ項目を足すこと（無いとリロードで戻る）
+        perfMode: "auto"
       }
     };
   }

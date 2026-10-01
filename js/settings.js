@@ -471,7 +471,12 @@ window.NV = window.NV || {};
       var l1 = "画面 " + window.innerWidth + "×" + window.innerHeight + "（CSS px）／DPR " + (Math.round(dpr * 100) / 100);
       var l2 = "円盤canvas " + (wi ? (wi.pxW + "×" + wi.pxH + "（DPR " + (Math.round(wi.dpr * 100) / 100) + "）") : "未描画")
         + "／実測 " + (fps == null ? "計測中" : (Math.round(fps * 10) / 10) + " fps");
-      el.textContent = l1 + "\n" + l2;
+      var l3 = "";
+      try {
+        var ps = (NV.app && NV.app.perfStatus) ? NV.app.perfStatus() : null;
+        if (ps) l3 = "\n描画: " + ps.text;
+      } catch (e) {}
+      el.textContent = l1 + "\n" + l2 + l3;
     } catch (e) {}
   }
   function startPerfTimer() {
@@ -529,6 +534,16 @@ window.NV = window.NV || {};
             '<span class="nvs-range-val" data-role="volume-val"></span>' +
             '<span class="nvs-muted">端末の音量は最大のままにして、ここで会場のざわつきに合わせる'
               + '（100%より上は歪むだけなので用意していません）</span>' +
+          '</div>' +
+          '<div class="nvs-row">' +
+            '<span class="nvs-label">描画</span>' +
+            '<select class="nvs-input" data-action="set-perfmode">' +
+              '<option value="auto">自動</option>' +
+              '<option value="lite">軽量</option>' +
+              '<option value="full">通常</option>' +
+            '</select>' +
+            '<span class="nvs-muted">回転がカクつくときは「軽量」。自動は端末と実測fpsから決める'
+              + '（演出の長さと音は変わりません）</span>' +
           '</div>' +
           '<div class="nvs-row nvs-toggle-row">' +
             '<label class="nvs-label" style="min-width:auto;">会場モード</label>' +
@@ -595,6 +610,9 @@ window.NV = window.NV || {};
     r.querySelector('[data-action="set-bright"]').checked =
       !!(state.settings && state.settings.brightMode);
     setVolumeUI(volumeOf(state));
+    r.querySelector('[data-action="set-perfmode"]').value =
+      (state.settings && (state.settings.perfMode === "lite" || state.settings.perfMode === "full"))
+        ? state.settings.perfMode : "auto";
     r.querySelector('[data-action="set-auto"]').value = toNum(state.settings && state.settings.autoAdvanceSec, 0);
     r.querySelector('[data-action="set-itempick"]').value =
       (state.settings && state.settings.itemPick === "auto") ? "auto" : "choose";
@@ -799,6 +817,14 @@ window.NV = window.NV || {};
       // その場で効かないと «明るくなったか» が判断できない。保存を待たずに反映する
       try { document.body.classList.toggle('bright', state.settings.brightMode); } catch (e) {}
       notify();
+      return;
+    }
+    if (action === "set-perfmode") {
+      // select なので change イベント（ボタンの click ではない）。
+      // notify → app.js の onSettingsSaved が applyPerfMode を呼ぶので、その場で反映される
+      state.settings.perfMode = (t.value === "lite" || t.value === "full") ? t.value : "auto";
+      notify();
+      showPerfState();
       return;
     }
     if (action === "set-itempick") {

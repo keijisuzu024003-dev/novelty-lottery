@@ -25,6 +25,9 @@ window.NV = window.NV || {};
   var lastT = 0;
   var dpr = 1;
   var cssW = 0, cssH = 0;
+  // 軽量モード（app.js が setLite で渡す）。実ピクセル予算 60万px・粒の数 4割
+  var lite = false;
+  var LITE_RATIO = 0.4;
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
   function rand(a, b) { return a + Math.random() * (b - a); }
@@ -37,8 +40,13 @@ window.NV = window.NV || {};
     try {
       cssW = canvas.clientWidth || window.innerWidth;
       cssH = canvas.clientHeight || window.innerHeight;
-      dpr = (NV.perf && NV.perf.pickDpr) ? NV.perf.pickDpr(cssW, cssH, 1.5, 2000000, 0.5)
-        : clamp(window.devicePixelRatio || 1, 1, 1.5);
+      // 軽量時は上限 1.0・60万px・下限 0.25（4K 級では 0.27 前後。動くリボンなので粗くても読める）
+      if (NV.perf && NV.perf.pickDpr) {
+        dpr = lite ? NV.perf.pickDpr(cssW, cssH, 1.0, 600000, 0.25)
+                   : NV.perf.pickDpr(cssW, cssH, 1.5, 2000000, 0.5);
+      } else {
+        dpr = clamp(window.devicePixelRatio || 1, 1, 1.5);
+      }
       canvas.width = Math.max(1, Math.round(cssW * dpr));
       canvas.height = Math.max(1, Math.round(cssH * dpr));
       if (cx) cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -108,13 +116,26 @@ window.NV = window.NV || {};
   // burst の多重呼び出しでパーティクル総数が暴走しないための絶対上限
   var HARD_CAP = 760;
 
+  // 軽量モードの切り替え。canvas を作り直すので紙吹雪が残っていれば消える
+  // （app.js は待機中にしか呼ばない）
+  function setLite(on) {
+    var v = !!on;
+    if (v === lite) return;
+    lite = v;
+    stop();
+    resize();
+  }
+
+  function hardCap() { return lite ? Math.round(HARD_CAP * LITE_RATIO) : HARD_CAP; }
+
   function burst(level) {
     try {
       if (!canvas || !cx) return;
       var n = LEVEL_COUNT[level] || LEVEL_COUNT[3];
+      if (lite) n = Math.max(1, Math.round(n * LITE_RATIO));
       var colors = LEVEL_COLORS[level] || LEVEL_COLORS[3];
 
-      var room = HARD_CAP - particles.length;
+      var room = hardCap() - particles.length;
       if (room <= 0) return; // 既に上限。追加しない(暴走防止)
       n = Math.min(n, room);
 
@@ -146,7 +167,8 @@ window.NV = window.NV || {};
 
       // 金テープ
       var rib = LEVEL_RIBBONS[level] || 0;
-      if (rib > 0) pushRibbons(Math.min(rib, HARD_CAP - particles.length), colors);
+      if (lite) rib = Math.round(rib * LITE_RATIO);
+      if (rib > 0) pushRibbons(Math.min(rib, hardCap() - particles.length), colors);
 
       startLoop();
     } catch (e) {}
@@ -177,9 +199,11 @@ window.NV = window.NV || {};
   function streamers(n) {
     try {
       if (!canvas || !cx) return;
-      var room = HARD_CAP - particles.length;
+      var room = hardCap() - particles.length;
       if (room <= 0) return;
-      pushRibbons(Math.min(n || 24, room), GOLD);
+      var cnt = n || 24;
+      if (lite) cnt = Math.max(1, Math.round(cnt * LITE_RATIO));
+      pushRibbons(Math.min(cnt, room), GOLD);
       startLoop();
     } catch (e) {}
   }
@@ -314,6 +338,7 @@ window.NV = window.NV || {};
     attach: attach,
     burst: burst,
     streamers: streamers,
+    setLite: setLite,
     stop: stop
   };
 })();

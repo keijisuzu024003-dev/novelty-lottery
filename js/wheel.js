@@ -279,6 +279,8 @@ window.NV = window.NV || {};
     this._pendingWin = null; // 炸裂を保留している当たりの扇（1等の «時間が止まる» 間）
     this._omega = 0;       // 角速度 [rad/s]。フレームレートに依存しない «速さ» の指標
     this._dt = 1 / 60;     // 直近のフレーム間隔[s]。90Hz 端末で残像が薄くならないように
+    this._lite = false;       // 軽量モード（app.js が決めて setLite で渡す。SPEC「軽量モード」参照）
+    this._glowSkip = false;   // 軽量時、当たりの脈動だけを描くフレームを1枚おきに間引く
     this._reducedMotion = false;
     try {
       this._reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -313,6 +315,11 @@ window.NV = window.NV || {};
     try { this.render(); } catch (e) { console.warn("NV.Wheel.render 失敗", e); }
   };
 
+  // 軽量モードの切り替え。canvas の実ピクセル予算が変わるので呼び出し側で resize() も呼ぶこと
+  Wheel.prototype.setLite = function (on) {
+    this._lite = !!on;
+  };
+
   Wheel.prototype.resize = function () {
     try {
       var canvas = this.canvas;
@@ -324,7 +331,11 @@ window.NV = window.NV || {};
       //           2160x3840@1 → 円盤≒2000css、予算で 0.79（≒158万px四方）。
       //           DPR3 のタブレットも 1.5 で切る。盤面は細い線と文字だけなので 1.5 倍で十分読める。
       // 下限 0.75 は CSS で拡大されてもぼやけを許容できる線。毎フレーム描く（自転）ので px 数が効く
-      var dpr = perf.pickDpr(w, h, 1.5, 2500000, 0.75);
+      // 軽量モードは 100万px・上限 1.0・下限 0.35（4K 級の画面では 0.5 前後まで落ちる。
+      // 盤面は平らな色面と太い線だけなので、拡大でぼやけても «どこに止まったか» は読める）
+      var dpr = this._lite
+        ? perf.pickDpr(w, h, 1.0, 1000000, 0.35)
+        : perf.pickDpr(w, h, 1.5, 2500000, 0.75);
       this.cssW = w;
       this.cssH = h;
       canvas.width = Math.max(1, Math.round(w * dpr));
@@ -558,7 +569,12 @@ window.NV = window.NV || {};
         this.rotation += IDLE_SPEED * dt;
         try { this.render(); } catch (e) { /* 描画失敗は無視して継続 */ }
       } else if (glowing || this._flareT != null || this._nearT != null) {
-        try { this.render(); } catch (e) {}
+        // 軽量時は «当たりの脈動だけ» のフレームを1枚おきに描く（脈は 380ms 周期で 30fps あれば十分）。
+        // 炸裂・ニアミスの最中は間引かない
+        this._glowSkip = !this._glowSkip;
+        if (!(this._lite && glowing && this._flareT == null && this._nearT == null && this._glowSkip)) {
+          try { this.render(); } catch (e) {}
+        }
       }
     }
 
@@ -770,7 +786,8 @@ window.NV = window.NV || {};
     ctx.translate(cx, cy);
 
     // 盤の外へ漏れる熱。速いほど強く、止まると消える
-    if (speed > 0.02) this._drawHalo(ctx, outer, maxR, speed);
+    // 軽量時は省く（lighter 合成の大きな放射グラデーション＝飾り。盤の読み取りには関係しない）
+    if (speed > 0.02 && !this._lite) this._drawHalo(ctx, outer, maxR, speed);
 
     // ---- 回転する層 ----
     // 1フレームぶんの回転量を後ろへ何枚か重ねる＝本物のモーションブラー。
@@ -778,7 +795,8 @@ window.NV = window.NV || {};
     // 残像の幅は «60Hz 1フレームぶんに相当する角度»。実フレームレートで割り戻すことで、
     // 90Hz 端末でも 60Hz 端末でも同じだけ滲む
     var blur = this._reducedMotion ? 0 : Math.min((this._omega || 0) / 60, 0.62);
-    var ghosts = blur > 0.02 ? Math.min(9, Math.round(blur * 18)) : 0;
+    // 軽量時の残像は最大2枚（通常は9枚）。盤を描き直す回数がそのまま負荷になる
+    var ghosts = blur > 0.02 ? Math.min(this._lite ? 2 : 9, Math.round(blur * 18)) : 0;
     // 古い残像から順に半透明で重ね、最後の «現在位置» も透かして置く。
     // ここを不透明にすると盤面全体を覆ってしまい、残像が1枚も見えなくなる。
     for (var g = ghosts; g >= 1; g--) {
@@ -1078,7 +1096,7 @@ window.NV = window.NV || {};
     }
 
     // 放射する光条。長短を混ぜないと «歯車» のように機械的に見える
-    var rays = 18;
+    var rays = this._lite ? 9 : 18;   // 軽量時は光条の本数を半分に
     var cap = maxR * 0.99;
     var len = outer * (0.8 + 0.9 * p);
     ctx.save();

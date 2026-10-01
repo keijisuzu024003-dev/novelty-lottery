@@ -1378,3 +1378,68 @@ body.settings-open #settings-root{ display:block; }
   #choose-grid.n4 .cc{ padding:calc(var(--u) * 2) calc(var(--u) * 2.5); }
   #choose-grid.n5 .cc,#choose-grid.n6 .cc{ padding:calc(var(--u) * 1.6) calc(var(--u) * 2.5); }
 }
+
+/* ====================================================================
+   軽量モード（body.lite）
+   --------------------------------------------------------------------
+   実機（Dahua 55型 4K・Cortex-A55・Chrome 98）は 4K 級の全面レイヤーが重なると
+   GPU のフィルレートとテクスチャメモリが足りず、回転がカクつきタイルが欠ける。
+   app.js が判定して body に付ける（設定 perfMode：auto / lite / full。SPEC「軽量モード」）。
+
+   落とすもの：全面の光条・金の粒・背景のノイズ・毎フレームのビネット書き換え・
+              blur / drop-shadow を含むアニメ・will-change・縁の blur 影
+   残すもの：意味を持つ表示と演出の «時間»。登場は opacity / transform だけで組む。
+   ここは通常モードの見た目を一切変えない（すべて body.lite の下）。
+   ==================================================================== */
+
+/* 全面レイヤーを出さない。#rays は app.js も rAF を回さない */
+body.lite #rays,
+body.lite #dust{ display:none; }
+body.lite #rays,
+body.lite #ticker-track{ will-change:auto; }
+body.lite #bg::after{ display:none; }
+
+/* ビネットは毎フレーム書かない。回転中だけ固定の濃さへ 600ms で1回だけ寄せる。
+   （通常は減速に合わせて --vig を毎フレーム書く。軽量では app.js が書かない） */
+body.lite #vig,
+body.lite.tensing #vig{ opacity:0; transition:opacity 600ms ease; }
+body.lite[data-state="spinning"] #vig{ opacity:0.8; }
+
+/* filter を持つアニメ・要素は外し、opacity / transform だけの登場にする */
+body.lite #pointer{ filter:none; }
+body.lite #result-item{ filter:none; }
+body.lite .jp-mark{ filter:none; }
+@keyframes rank-slam-lite{
+  0%   { transform:scale(1.7); opacity:0; }
+  48%  { transform:scale(0.96); opacity:1; }
+  100% { transform:scale(1); opacity:1; }
+}
+body.lite #result-item.slam{ animation-name:rank-slam-lite; }
+@keyframes jp-in-lite{
+  0%   { transform:scale(1.8); opacity:0; }
+  70%  { transform:scale(0.97); opacity:1; }
+  100% { transform:scale(1); opacity:1; }
+}
+body.lite .jp-mark{ animation-name:jp-in-lite; }
+
+/* 衝撃波。通常は border-width を動かす（毎フレームレイアウトと描画が走る）。
+   軽量は幅を固定し、scale と opacity だけで広げる */
+@keyframes shockwave-lite{
+  0%   { transform:scale(1);   opacity:0.85; }
+  100% { transform:scale(2.6); opacity:0; }
+}
+body.lite #shock::before,
+body.lite #shock::after{ border-width:calc(var(--wheel) * 0.008); }
+body.lite.impact #shock::before,
+body.lite.impact #shock::after{ animation-name:shockwave-lite; }
+
+/* 縁の炎。blur の大きい inset 影は 4K で最初の描画が重い（炸裂の瞬間にタイルが欠ける）。
+   ふちへ向けて明るくなる放射グラデーションに置き換える。濃さと長さは通常と同じ --edge-peak / --edge-dur */
+body.lite #edge{
+  box-shadow:none;
+  background:radial-gradient(ellipse closest-side at 50% 50%,
+    rgba(255,150,44,0) 66%,
+    rgba(255,170,60,0.34) 84%,
+    rgba(255,208,110,0.86) 96%,
+    rgba(255,244,214,0.95) 100%);
+}

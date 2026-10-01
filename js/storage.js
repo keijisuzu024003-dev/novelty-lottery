@@ -150,6 +150,10 @@ window.NV = window.NV || {};
     out.volume = isFinite(volNum) ? Math.max(0, Math.min(1, volNum))
                                   : (defSettings.volume == null ? 1 : defSettings.volume);
 
+    // 描画モード（auto / lite / full）。ここに追記し忘れると、設定してもリロードで "auto" に戻る
+    out.perfMode = (s.perfMode === "lite" || s.perfMode === "full" || s.perfMode === "auto")
+      ? s.perfMode : (defSettings.perfMode || "auto");
+
     return out;
   }
 

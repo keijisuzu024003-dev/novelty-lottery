@@ -87,6 +87,7 @@ window.NV = window.NV || {};
     el.chooseBar = document.getElementById('choose-bar');
     el.resultList = document.getElementById('result-list');
     el.rays = document.getElementById('rays');
+    el.vig = document.getElementById('vig');
     el.dust = document.getElementById('dust');
     el.edge = document.getElementById('edge');
     el.ticker = document.getElementById('ticker');
@@ -110,7 +111,7 @@ window.NV = window.NV || {};
     }
     // 在庫が尽きた品目を帯から外す。作り直すと流れが頭に戻るので、
     // 並びが変わったときだけ組み直す（buildTicker の中で判定している）
-    if (name === 'idle') { buildTicker(); }
+    if (name === 'idle') { buildTicker(); perf.idleSince = Date.now(); }
     if (name !== 'choosing') { clearChooseTimer(); }
     syncRays();
   }
@@ -170,8 +171,11 @@ window.NV = window.NV || {};
       }
     } catch (e) {}
     applyBrightMode();
+    // 軽量モードの判定は粒を作る前に（軽量なら粒は作らない）
+    applyPerfMode();
     buildDust();
     updateRayScale();
+    startFpsWatch();
 
     bindEvents();
     requestWakeLock();
@@ -434,7 +438,9 @@ window.NV = window.NV || {};
   }
   function setTension(t){
     var v = t < 0 ? 0 : (t > 1 ? 1 : t);
-    if (el.body) { el.body.style.setProperty('--vig', v.toFixed(3)); }
+    // --vig は #vig だけに書く。body に書くと、毎フレーム全子孫のスタイル再計算が走る。
+    // 軽量モードは書かない（濃さは CSS が固定値で持つ。app.css の body.lite #vig）
+    if (el.vig && !perf.lite) { el.vig.style.setProperty('--vig', v.toFixed(3)); }
     setZoom(1.02 + 0.08 * v);
   }
   function resetTension(){
@@ -1013,8 +1019,11 @@ window.NV = window.NV || {};
   // 待機中にゆっくり昇る。位置と速さは端末ごとにばらけさせる。
   // 負の delay を入れて、起動直後から «途中の状態» で散らばらせる
   var DUST_COUNT = 22;
+  var dustBuilt = false;
   function buildDust(){
-    if (!el.dust || prefersReducedMotion) { return; }
+    // 軽量モードでは粒を作らない（CSS でも非表示）。通常へ戻したときに初めて作る
+    if (!el.dust || prefersReducedMotion || perf.lite || dustBuilt) { return; }
+    dustBuilt = true;
     var frag = document.createDocumentFragment();
     for (var i = 0; i < DUST_COUNT; i++) {
       var d = document.createElement('i');
@@ -1057,6 +1066,8 @@ window.NV = window.NV || {};
   function syncRays(){
     if (!el.rays) { return; }
     if (prefersReducedMotion) { el.rays.style.display = 'none'; return; }
+    // 軽量モードは光条を出さず、rAF も回さない
+    if (perf.lite) { el.rays.style.display = 'none'; rays.target = 0; rays.speed = 0; return; }
     var name = (el.body && el.body.dataset.state) || 'boot';
     var v = RAY_OP[name] == null ? 0 : RAY_OP[name];
     // 明るい会場では光り物は飛ぶだけ。半分に落として文字と盤を守る
@@ -1067,12 +1078,13 @@ window.NV = window.NV || {};
   }
 
   function ensureRays(){
-    if (rays.raf || prefersReducedMotion || !el.rays) { return; }
+    if (rays.raf || prefersReducedMotion || perf.lite || !el.rays) { return; }
     rays.last = 0;
     rays.raf = requestAnimationFrame(rayStep);
   }
 
   function rayStep(ts){
+    if (perf.lite) { rays.raf = null; rays.last = 0; return; }
     var dt = rays.last ? Math.min(0.05, (ts - rays.last) / 1000) : 0.016;
     rays.last = ts;
 
@@ -1098,7 +1110,7 @@ window.NV = window.NV || {};
 
   // 停止の瞬間。光条を一気に加速させ、外へ広げて抜く
   function raysHit(isTop){
-    if (!el.rays || prefersReducedMotion) { return; }
+    if (!el.rays || prefersReducedMotion || perf.lite) { return; }
     rays.boost = isTop ? 900 : 300;
     rays.grow = isTop ? 1.75 : 1.20;
     rays.op = isTop ? 1 : 0.85;
@@ -1187,6 +1199,138 @@ window.NV = window.NV || {};
   }
 
   // ---------------------------------------------------------------
+  // 軽量モード（body.lite）
+  // ---------------------------------------------------------------
+  //
+  // 実機（Dahua 55型 4K・Cortex-A55 4コア・Chrome 98）で 4K 級の全面レイヤーが重なり、
+  // 回転がカクつき、タイルが欠ける。重い «飾り» を落として、意味のある表示（当たりの扇・
+  // ニアミス・指針の下の扇）と演出の «時間» は残す。何を落とし何を残すかは SPEC「軽量モード」。
+  //
+  // settings.perfMode: "auto"（既定）／"lite"／"full"
+  //   auto … 起動時に «コア数 4 以下 かつ 物理ピクセル 400万以上» なら軽量。
+  //          そうでなくても、待機中の実測 fps が数秒平均で 45 を割れば軽量へ。
+  //          切り替えは待機中（idle）だけ。回転中・結果中には切り替えない。
+  //          一度軽量になったら戻さない（行ったり来たりすると画面が瞬く）
+  var LITE_MIN_PX = 4000000;    // 物理ピクセル数（innerWidth × innerHeight × dpr²）
+  var LITE_MAX_CORES = 4;
+  var LITE_FPS = 45;            // 待機中の平均がこれを割ったら軽量へ
+  var LITE_SAMPLES = 4;         // 1秒ごとに採った fps の平均を取る数
+  var LITE_SETTLE_MS = 2500;    // 待機に入ってからこの間は採らない（直前の回転・読み込みの影響を避ける）
+
+  var perf = {
+    lite: false,
+    mode: 'auto',
+    reason: '',          // 軽量にした理由（診断表示用）
+    autoLatched: false,  // auto で一度軽量にしたか（戻さない）
+    autoReason: '',
+    samples: [],
+    idleSince: 0,
+    timer: null
+  };
+
+  function physicalPixels(){
+    var d = window.devicePixelRatio || 1;
+    return (window.innerWidth || 0) * (window.innerHeight || 0) * d * d;
+  }
+
+  // 起動時の判定。軽量にすべき理由の文字列を返す（不要なら ''）
+  function startupLiteReason(){
+    var cores = 0;
+    try { cores = Number(navigator.hardwareConcurrency) || 0; } catch (e) {}
+    var px = physicalPixels();
+    if (cores > 0 && cores <= LITE_MAX_CORES && px >= LITE_MIN_PX) {
+      return 'CPU ' + cores + 'コア・' + Math.round(px / 10000) + '万px';
+    }
+    return '';
+  }
+
+  function setLiteMode(on, reason){
+    var changed = (perf.lite !== on);
+    perf.lite = on;
+    perf.reason = reason || '';
+    if (el.body) { el.body.classList.toggle('lite', on); }
+    if (!changed) { return; }
+
+    // canvas の実ピクセル予算が変わるので作り直す
+    try { if (wheel) { wheel.setLite(on); wheel.resize(); } } catch (e) {}
+    try { NV.confetti.setLite(on); } catch (e) {}
+
+    if (on) {
+      if (rays.raf) { cancelAnimationFrame(rays.raf); rays.raf = null; }
+      rays.last = 0; rays.op = 0; rays.boost = 0; rays.grow = 1;
+      if (el.rays) { el.rays.style.opacity = '0'; }
+    } else {
+      if (el.rays && !prefersReducedMotion) { el.rays.style.display = ''; }
+      buildDust();
+    }
+    syncRays();
+  }
+
+  function applyPerfMode(){
+    var m = 'auto';
+    try { m = (state && state.settings && state.settings.perfMode) || 'auto'; } catch (e) {}
+    if (m !== 'lite' && m !== 'full') { m = 'auto'; }
+    perf.mode = m;
+    if (m === 'lite') {
+      setLiteMode(true, '手動指定');
+    } else if (m === 'full') {
+      setLiteMode(false, '手動指定');
+    } else if (perf.autoLatched) {
+      setLiteMode(true, perf.autoReason);
+    } else {
+      var why = startupLiteReason();
+      if (why) {
+        perf.autoLatched = true;
+        perf.autoReason = why;
+        setLiteMode(true, why);
+      } else {
+        setLiteMode(false, '');
+      }
+    }
+    perf.samples.length = 0;
+  }
+
+  // 待機中の fps を1秒ごとに採り、数秒平均が LITE_FPS を割ったら軽量へ。
+  // fps は円盤の rAF ループ（NV.perf.tick）が持つ。ループが止まっている間は null なので採らない
+  function watchFps(){
+    try {
+      if (perf.mode !== 'auto' || perf.lite) { perf.samples.length = 0; return; }
+      if (!el.body || el.body.dataset.state !== 'idle') { perf.samples.length = 0; return; }
+      if (document.visibilityState && document.visibilityState !== 'visible') { perf.samples.length = 0; return; }
+      if (Date.now() - perf.idleSince < LITE_SETTLE_MS) { return; }
+      var f = (NV.perf && NV.perf.fps) ? NV.perf.fps() : null;
+      if (f == null) { return; }
+      perf.samples.push(f);
+      if (perf.samples.length > LITE_SAMPLES) { perf.samples.shift(); }
+      if (perf.samples.length < LITE_SAMPLES) { return; }
+      var sum = 0;
+      for (var i = 0; i < perf.samples.length; i++) { sum += perf.samples[i]; }
+      var avg = sum / perf.samples.length;
+      if (avg < LITE_FPS) {
+        perf.autoLatched = true;
+        perf.autoReason = '待機中 ' + Math.round(avg) + 'fps（' + LITE_FPS + '未満）';
+        setLiteMode(true, perf.autoReason);
+        perf.samples.length = 0;
+      }
+    } catch (e) {}
+  }
+  function startFpsWatch(){
+    if (perf.timer) { return; }
+    perf.timer = setInterval(watchFps, 1000);
+  }
+
+  // 設定画面の診断行用
+  function perfStatus(){
+    var auto = (perf.mode === 'auto');
+    if (perf.lite) {
+      return { lite: true, mode: perf.mode,
+        text: '軽量（' + (auto ? '自動判定: ' + perf.reason : '手動指定') + '）' };
+    }
+    return { lite: false, mode: perf.mode,
+      text: '通常（' + (auto ? '自動判定: 軽量にする条件に当たらず' : '手動指定') + '）' };
+  }
+
+  // ---------------------------------------------------------------
   // 設定（スタッフ専用）
   // ---------------------------------------------------------------
 
@@ -1209,6 +1353,7 @@ window.NV = window.NV || {};
   function onSettingsSaved(nextState){
     if (nextState) { state = nextState; }
     applyBrightMode();
+    applyPerfMode();
     try { NV.storage.save(state); } catch (e) {}
     try {
       NV.sound.setVolume(state.settings && state.settings.volume == null
@@ -1392,6 +1537,7 @@ window.NV = window.NV || {};
 
   NV.app = NV.app || {};
   NV.app.start = start;
+  NV.app.perfStatus = perfStatus;
 
   // モンテカルロ検証などでコンソールから現在の state を読めるようにしておく。
   // state 変数そのものへの参照を返すゲッターにして、差し替え（設定保存など）後も追従させる。
