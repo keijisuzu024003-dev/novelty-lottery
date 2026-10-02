@@ -1170,6 +1170,40 @@ body.bright .cc{ background:linear-gradient(#241F1A, #191512); border-color:#5E5
   height:64px;
   z-index:8;
   background:transparent;
+  touch-action:none;
+}
+/* スタッフ用の目印。来場者の目を引かないよう細い点線の丸を薄く出すだけ（PIN で守られているので隠す必要はない）。
+   長押し中は輪が 1.5 秒（LONG_PRESS_MS）で満ちる */
+#corner-hotspot::before{
+  content:"";
+  position:absolute;
+  right:22%; top:22%;
+  width:40%; height:40%;
+  border-radius:50%;
+  border:2px dashed rgba(201,162,75,0.55);
+  box-sizing:border-box;
+}
+#corner-hotspot::after{
+  content:"";
+  position:absolute;
+  right:12%; top:12%;
+  width:60%; height:60%;
+  border-radius:50%;
+  border:3px solid #C9A24B;
+  box-sizing:border-box;
+  opacity:0;
+  transform:scale(0.4);
+}
+#corner-hotspot.pressing::after{ animation:hotspot-fill 1.5s linear forwards; }
+@keyframes hotspot-fill{ from{ opacity:0.3; transform:scale(0.4); } to{ opacity:1; transform:scale(1); } }
+/* 回転中・特賞の演出中は目印を消す（長押し自体は効く） */
+body[data-state="spinning"] #corner-hotspot::before,
+body[data-state="jackpot"] #corner-hotspot::before{ opacity:0; }
+/* 縦置き 55型：64px では約4cm 四方しかなく、指が外れて下の要素を触っていた。約2倍に広げる */
+@media (orientation: portrait){
+  #corner-hotspot{ width:calc(var(--u) * 12); height:calc(var(--u) * 12); min-width:64px; min-height:64px; }
+  #corner-hotspot::before{ border-width:calc(var(--u) * 0.35); }
+  #corner-hotspot::after{ border-width:calc(var(--u) * 0.5); }
 }
 
 #settings-root{ display:none; }

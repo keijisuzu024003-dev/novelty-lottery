@@ -1398,21 +1398,40 @@ window.NV = window.NV || {};
   function bindCornerHotspot(){
     if (!el.cornerHotspot) { return; }
 
-    function startPress(){
+    // 長押しの間は .pressing を付け、角の印に 1.5 秒で満ちる輪を出す（押せているか分かるように）。
+    // 55型の静電容量タッチは押している間に指の位置が数px揺れる。領域の外へ出た瞬間に
+    // 取り消すと長押しが成立しにくいので、pointer capture で指を領域に結び付け、
+    // 取り消すのは «大きく動いた» ときと «離した» ときだけにする。
+    var pressX = 0, pressY = 0;
+    var MOVE_TOLERANCE = 40;
+    function startPress(ev){
       clearLongPress();
+      pressX = ev.clientX; pressY = ev.clientY;
+      try { el.cornerHotspot.setPointerCapture(ev.pointerId); } catch (e) {}
+      el.cornerHotspot.classList.add('pressing');
       longPressTimer = setTimeout(function(){
         longPressTimer = null;
+        el.cornerHotspot.classList.remove('pressing');
         openSettings();
       }, LONG_PRESS_MS);
     }
     function cancelPress(){
       clearLongPress();
+      el.cornerHotspot.classList.remove('pressing');
+    }
+    function movePress(ev){
+      if (!longPressTimer) { return; }
+      if (Math.abs(ev.clientX - pressX) > MOVE_TOLERANCE ||
+          Math.abs(ev.clientY - pressY) > MOVE_TOLERANCE) { cancelPress(); }
     }
 
     el.cornerHotspot.addEventListener('pointerdown', startPress);
+    el.cornerHotspot.addEventListener('pointermove', movePress);
     el.cornerHotspot.addEventListener('pointerup', cancelPress);
     el.cornerHotspot.addEventListener('pointercancel', cancelPress);
-    el.cornerHotspot.addEventListener('pointerleave', cancelPress);
+    // 長押しの指が離れたときに下の要素へ click が抜けないよう、ここで止める
+    el.cornerHotspot.addEventListener('click', function(ev){ ev.stopPropagation(); });
+    el.cornerHotspot.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
   }
 
   function clearLongPress(){
@@ -1587,11 +1606,9 @@ window.NV = window.NV || {};
     if (el.btnStart) {
       el.btnStart.addEventListener('click', startSpin);
     }
-    if (el.stage) {
-      el.stage.addEventListener('click', function(){
-        if (el.body.dataset.state === 'idle') { startSpin(); }
-      });
-    }
+    // 盤のタップでは回さない（2026-10-02 本人の要望）。抽選は «抽選する» ボタンだけ。
+    // 縦置きサイネージでは盤が右上の設定用の長押し領域のすぐ下にあり、
+    // 設定を開こうとした指が少し外れるだけで抽選が始まっていた。
 
     if (el.btnNext) {
       el.btnNext.addEventListener('click', function(ev){
