@@ -9,7 +9,7 @@ window.NV = window.NV || {};
 
   // アプリの版。sw.js の CACHE_NAME（'novelty-lottery-v' + 番号）と必ず同じ番号にする。
   // 更新時は «両方» 上げること（tools/test_update.py が一致を検査する）。
-  var APP_VERSION = "v22";
+  var APP_VERSION = "v23";
 
   // 会場一覧。設定画面のセレクトと CSV の絞り込みで使う。
   var VENUES = ["名古屋", "大阪", "東京", "福岡"];

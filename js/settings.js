@@ -604,6 +604,11 @@ window.NV = window.NV || {};
             '<button type="button" class="nvs-btn secondary" data-action="export-csv-venue">履歴CSV（今の会場）</button>' +
             '<button type="button" class="nvs-btn secondary" data-action="export-csv-all">履歴CSV（全会場）</button>' +
           '</div>' +
+          // CSV はこの端末から取り出せない（ファイル管理アプリが無い）。画面に出してスマホで撮る
+          '<div class="nvr-launch nvs-row">' +
+            '<button type="button" class="nvs-btn" data-action="show-records">記録を表示（写真用）</button>' +
+            '<span class="nvs-muted">配布の集計と明細を白地の画面に出します。スマホで撮って残してください</span>' +
+          '</div>' +
           '<div class="nvs-row">' +
             '<button type="button" class="nvs-btn danger" data-action="clear-history">履歴を消す</button>' +
           '</div>' +
@@ -736,6 +741,11 @@ window.NV = window.NV || {};
       });
       return;
     }
+    if (action === "show-records") {
+      try { NV.records.open(state); } catch (e3) { showMsg("記録を表示できませんでした"); }
+      return;
+    }
+
     if (action === "export-csv-venue") {
       window.NV.storage.exportCSV(state, state.venue);
       showMsg("「" + state.venue + "」の履歴CSVを書き出しました");
@@ -921,6 +931,7 @@ window.NV = window.NV || {};
 
   function closeInternal() {
     stopPerfTimer();
+    try { if (NV.records) NV.records.close(); } catch (e) {}
     var r = getRoot();
     if (r) r.innerHTML = "";
     document.body.classList.remove("settings-open");
