@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#060B18">
+<title>ようこそ｜アツミ電氣 プライベート展示会2026</title>
+<!--
+  受付歓迎画面（Dahua DHI-LDV55-SAI400TL・縦 2160×3840／CSS 1080×1920・DPR2・Chrome 98）
+  - Chrome 98 で動く機能だけを使う（:has・コンテナクエリ・dvh・CSSネスト・text-wrap は使わない）
+  - 寸法はすべて --u（画面幅の1%。縦長でない画面では高さ基準）で組む
+  - 会場は当日の日付で自動判定。右上の角を1.5秒長押しで手動選択
+  - タップで全画面に戻す（Chrome のタブ切替で全画面が解けるため）
+-->
+<style>
+@font-face{
+  font-family:"Shippori Welcome";
+  src:url("fonts/ShipporiMinchoB1-Bold.welcome.woff2") format("woff2");
+  font-weight:700;font-display:block;
+}
+:root{
+  --u:min(1vw, 0.5625vh);
+  --navy-0:#03060F;
+  --navy-1:#060B18;
+  --navy-2:#0C1630;
+  --navy-3:#16244A;
+  --brass-hi:#FBEFCE;
+  --brass:#E0BC6A;
+  --brass-mid:#B08C36;
+  --brass-lo:#5E4715;
+  --ink:#F6F0E2;
+  --ink-dim:#B9AE98;
+  --gold-text:linear-gradient(180deg,#FFF6DA 0%,#F2D98F 28%,#D9AE52 52%,#A57C2B 74%,#E9C979 100%);
+  --font:"Shippori Welcome","Shippori Mincho B1","Yu Mincho","YuMincho","Hiragino Mincho ProN","Noto Serif CJK JP",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--navy-1)}
+body{
+  font-family:var(--font);font-weight:700;color:var(--ink);
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  cursor:none;
+}
+
+/* ───────── 背景 ───────── */
+#stage{position:fixed;inset:0;overflow:hidden;
+  background:
+    radial-gradient(120% 70% at 50% 30%, var(--navy-3) 0%, var(--navy-2) 30%, var(--navy-1) 62%, var(--navy-0) 100%);
+}
+/* 回転する光の筋（合成レイヤーで回すだけなので軽い） */
+.rays{position:absolute;left:50%;top:31%;width:calc(var(--u)*260);height:calc(var(--u)*260);
+  margin:calc(var(--u)*-130) 0 0 calc(var(--u)*-130);
+  background:repeating-conic-gradient(from 0deg,
+    rgba(224,188,106,.055) 0deg 2.5deg, rgba(224,188,106,0) 2.5deg 15deg);
+  -webkit-mask-image:radial-gradient(circle, #000 0%, rgba(0,0,0,.55) 30%, transparent 62%);
+          mask-image:radial-gradient(circle, #000 0%, rgba(0,0,0,.55) 30%, transparent 62%);
+  animation:spin 140s linear infinite;will-change:transform;opacity:0;
+  animation-name:spin, fadeIn;animation-duration:140s, 3s;animation-delay:0s, .4s;
+  animation-timing-function:linear, ease-out;animation-iteration-count:infinite, 1;animation-fill-mode:none, forwards;
+}
+.rays.r2{width:calc(var(--u)*200);height:calc(var(--u)*200);margin:calc(var(--u)*-100) 0 0 calc(var(--u)*-100);
+  background:repeating-conic-gradient(from 7deg,
+    rgba(251,239,206,.04) 0deg 1deg, rgba(251,239,206,0) 1deg 11deg);
+  animation-duration:200s, 3s;animation-direction:reverse, normal;
+}
+/* 中央の光だまり（ゆっくり呼吸） */
+.halo{position:absolute;left:50%;top:31%;width:calc(var(--u)*150);height:calc(var(--u)*110);
+  margin:calc(var(--u)*-55) 0 0 calc(var(--u)*-75);border-radius:50%;
+  background:radial-gradient(closest-side, rgba(242,217,143,.30), rgba(224,188,106,.10) 45%, transparent 100%);
+  animation:breathe 7s ease-in-out infinite;will-change:opacity,transform}
+/* 下から立ちのぼる金の霞 */
+.mist{position:absolute;left:-10%;right:-10%;bottom:-6%;height:42%;
+  background:radial-gradient(60% 70% at 50% 100%, rgba(176,140,54,.22), transparent 70%);
+  animation:breathe 11s ease-in-out infinite reverse}
+.vignette{position:absolute;inset:0;
+  background:radial-gradient(130% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%);pointer-events:none}
+#dust{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+/* ───────── 額縁 ───────── */
+.frame{position:absolute;inset:calc(var(--u)*3.2);pointer-events:none;opacity:0;animation:fadeIn 2.4s .2s ease-out forwards}
+.frame::before,.frame::after{content:"";position:absolute;inset:0;border:calc(var(--u)*.22) solid rgba(224,188,106,.75)}
+.frame::after{inset:calc(var(--u)*1.1);border-width:calc(var(--u)*.1);border-color:rgba(224,188,106,.38)}
+.corner{position:absolute;width:calc(var(--u)*11);height:calc(var(--u)*11)}
+.corner svg{width:100%;height:100%;display:block}
+.corner.tl{left:calc(var(--u)*-1.4);top:calc(var(--u)*-1.4)}
+.corner.tr{right:calc(var(--u)*-1.4);top:calc(var(--u)*-1.4);transform:scaleX(-1)}
+.corner.bl{left:calc(var(--u)*-1.4);bottom:calc(var(--u)*-1.4);transform:scaleY(-1)}
+.corner.br{right:calc(var(--u)*-1.4);bottom:calc(var(--u)*-1.4);transform:scale(-1,-1)}
+
+/* ───────── 本文 ───────── */
+main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;text-align:center;
+  padding:calc(var(--u)*11) calc(var(--u)*6) calc(var(--u)*8)}
+.eyebrow{font-size:calc(var(--u)*2.3);letter-spacing:.42em;color:var(--brass);text-indent:.42em;
+  display:flex;align-items:center;gap:calc(var(--u)*2.4)}
+.eyebrow::before,.eyebrow::after{content:"";width:calc(var(--u)*9);height:1px;background:linear-gradient(90deg,transparent,var(--brass))}
+.eyebrow::after{background:linear-gradient(270deg,transparent,var(--brass))}
+
+.hero{margin-top:calc(var(--u)*6);display:flex;flex-direction:column;align-items:center}
+.welcome-en{font-size:calc(var(--u)*4.4);letter-spacing:.62em;text-indent:.62em;color:var(--brass-hi);
+  text-shadow:0 0 calc(var(--u)*2) rgba(224,188,106,.55)}
+.gold{background:var(--gold-text);-webkit-background-clip:text;background-clip:text;color:transparent;
+  -webkit-text-fill-color:transparent}
+.welcome-ja{position:relative;margin-top:calc(var(--u)*2.5);font-size:calc(var(--u)*19);line-height:1.15;white-space:nowrap;
+  letter-spacing:.04em;text-indent:.04em;
+  filter:drop-shadow(0 calc(var(--u)*.5) calc(var(--u)*1.6) rgba(0,0,0,.65)) drop-shadow(0 0 calc(var(--u)*3.5) rgba(224,188,106,.35))}
+/* 文字の上を光が走る。文字と同じ形に切り抜いた別レイヤーの背景位置だけを動かす */
+.shine{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(105deg, transparent 38%, rgba(255,250,235,.0) 42%, rgba(255,250,235,.95) 50%, rgba(255,250,235,0) 58%, transparent 62%);
+  background-size:300% 100%;background-position:150% 0;
+  -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
+  animation:shine 8s 3.2s ease-in-out infinite}
+.thanks{margin-top:calc(var(--u)*4);font-size:calc(var(--u)*4.5);line-height:1.75;letter-spacing:.12em;color:var(--ink)}
+
+.orn{margin:calc(var(--u)*5) 0 calc(var(--u)*4.5);width:calc(var(--u)*62);height:calc(var(--u)*3);
+  display:flex;align-items:center;gap:calc(var(--u)*2)}
+.orn i{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--brass) 70%,var(--brass-hi));transform-origin:right;transform:scaleX(0);animation:draw 1.6s 1.6s cubic-bezier(.2,.7,.2,1) forwards}
+.orn i:last-child{background:linear-gradient(270deg,transparent,var(--brass) 70%,var(--brass-hi));transform-origin:left}
+.orn b{width:calc(var(--u)*1.9);height:calc(var(--u)*1.9);transform:rotate(45deg);
+  background:linear-gradient(135deg,var(--brass-hi),var(--brass-mid));box-shadow:0 0 calc(var(--u)*2) rgba(242,217,143,.8)}
+
+.title .org{font-size:calc(var(--u)*4.4);letter-spacing:.3em;text-indent:.3em;color:var(--ink)}
+.title{margin-bottom:calc(var(--u)*5)}
+.title h2{margin-top:calc(var(--u)*1.6);font-size:calc(var(--u)*7);font-weight:700;letter-spacing:.06em;line-height:1.25;color:var(--ink)}
+.title h2 .yr{display:block;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*11);letter-spacing:.1em;text-indent:.1em;line-height:1.05;
+  filter:drop-shadow(0 0 calc(var(--u)*2.5) rgba(224,188,106,.35))}
+.title .catch{margin-top:calc(var(--u)*3.5);font-size:calc(var(--u)*5.2);letter-spacing:.24em;text-indent:.24em;color:var(--brass-hi)}
+
+.venue{margin-top:auto;position:relative;width:calc(var(--u)*76);padding:calc(var(--u)*3.4) calc(var(--u)*4) calc(var(--u)*3.6);
+  background:linear-gradient(180deg,rgba(22,36,74,.72),rgba(6,11,24,.78));
+  border:calc(var(--u)*.18) solid rgba(224,188,106,.7);
+  box-shadow:0 0 0 calc(var(--u)*.7) rgba(6,11,24,.6),0 0 0 calc(var(--u)*.85) rgba(224,188,106,.32),0 calc(var(--u)*2) calc(var(--u)*6) rgba(0,0,0,.45)}
+.venue-name{font-size:calc(var(--u)*6.6);letter-spacing:.3em;text-indent:.3em;line-height:1.2}
+.venue-rule{width:calc(var(--u)*30);height:1px;margin:calc(var(--u)*2) auto;background:linear-gradient(90deg,transparent,var(--brass),transparent)}
+.dates{font-size:calc(var(--u)*4);letter-spacing:.06em;white-space:nowrap;color:var(--ink)}
+.dates small{font-size:.72em;letter-spacing:.14em;color:var(--brass)}
+.hours{margin-top:calc(var(--u)*1.6);font-size:calc(var(--u)*3.6);letter-spacing:.12em;color:var(--ink-dim)}
+.hours small{font-size:.8em;letter-spacing:.22em;color:var(--brass);margin-right:.8em}
+
+footer{margin-top:calc(var(--u)*5)}
+footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
+
+/* 入場の演出 */
+.in{opacity:0;transform:translateY(calc(var(--u)*2.4));animation:rise 1.6s cubic-bezier(.2,.7,.2,1) forwards}
+.d1{animation-delay:.5s}.d2{animation-delay:.9s}.d3{animation-delay:1.3s}.d4{animation-delay:1.9s}
+.d5{animation-delay:2.3s}.d6{animation-delay:2.7s}.d7{animation-delay:3.1s}.d8{animation-delay:3.5s}
+
+/* タッチの波紋 */
+.ripple{position:absolute;width:calc(var(--u)*6);height:calc(var(--u)*6);margin:calc(var(--u)*-3) 0 0 calc(var(--u)*-3);
+  border-radius:50%;border:calc(var(--u)*.35) solid rgba(242,217,143,.9);pointer-events:none;
+  box-shadow:0 0 calc(var(--u)*3) rgba(242,217,143,.6), inset 0 0 calc(var(--u)*2) rgba(242,217,143,.4);
+  animation:ripple 1.4s cubic-bezier(.1,.6,.3,1) forwards}
+
+/* 会場の手動選択（スタッフ用） */
+#hotspot{position:absolute;right:0;top:0;width:calc(var(--u)*14);height:calc(var(--u)*14);z-index:5}
+#picker{position:absolute;inset:0;z-index:10;display:none;align-items:center;justify-content:center;
+  background:rgba(3,6,15,.86);cursor:default}
+#picker.open{display:flex}
+#picker .box{width:calc(var(--u)*72);padding:calc(var(--u)*5);border:1px solid var(--brass);background:var(--navy-2);text-align:center}
+#picker p{font-size:calc(var(--u)*3.6);letter-spacing:.1em;margin-bottom:calc(var(--u)*1.2)}
+#picker .note{font-size:calc(var(--u)*2.4);color:var(--ink-dim);margin-bottom:calc(var(--u)*3.5);letter-spacing:.04em;line-height:1.6}
+#picker button{display:block;width:100%;margin-top:calc(var(--u)*1.8);padding:calc(var(--u)*2.4) 0;font:inherit;font-size:calc(var(--u)*3.6);
+  letter-spacing:.2em;color:var(--ink);background:transparent;border:1px solid rgba(224,188,106,.55)}
+#picker button.on{background:linear-gradient(180deg,var(--brass),var(--brass-mid));color:var(--navy-1);border-color:var(--brass-hi)}
+#picker button.close{margin-top:calc(var(--u)*4);font-size:calc(var(--u)*2.8);color:var(--ink-dim);border-color:transparent}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{to{opacity:1}}
+@keyframes breathe{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:1;transform:scale(1.06)}}
+@keyframes rise{to{opacity:1;transform:none}}
+@keyframes draw{to{transform:scaleX(1)}}
+@keyframes shine{0%{background-position:150% 0}28%,100%{background-position:-50% 0}}
+@keyframes ripple{0%{opacity:1;transform:scale(.4)}100%{opacity:0;transform:scale(9)}}
+@media (prefers-reduced-motion:reduce){.rays,.halo,.mist,.shine{animation:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="rays"></div>
+  <div class="rays r2"></div>
+  <div class="halo"></div>
+  <div class="mist"></div>
+  <canvas id="dust"></canvas>
+  <div class="vignette"></div>
+
+  <div class="frame" aria-hidden="true">
+    <div class="corner tl"><svg viewBox="0 0 100 100"><g fill="none" stroke="#E0BC6A" stroke-width="2.2"><path d="M8 92V8h84"/><path d="M18 70V18h52" stroke-width="1.2" opacity=".7"/><path d="M8 8l22 22" stroke-width="1.2" opacity=".7"/></g><rect x="24" y="24" width="12" height="12" transform="rotate(45 30 30)" fill="#F2D98F"/><circle cx="8" cy="8" r="5" fill="#FBEFCE"/></svg></div>
+    <div class="corner tr"><svg viewBox="0 0 100 100"><g fill="none" stroke="#E0BC6A" stroke-width="2.2"><path d="M8 92V8h84"/><path d="M18 70V18h52" stroke-width="1.2" opacity=".7"/><path d="M8 8l22 22" stroke-width="1.2" opacity=".7"/></g><rect x="24" y="24" width="12" height="12" transform="rotate(45 30 30)" fill="#F2D98F"/><circle cx="8" cy="8" r="5" fill="#FBEFCE"/></svg></div>
+    <div class="corner bl"><svg viewBox="0 0 100 100"><g fill="none" stroke="#E0BC6A" stroke-width="2.2"><path d="M8 92V8h84"/><path d="M18 70V18h52" stroke-width="1.2" opacity=".7"/><path d="M8 8l22 22" stroke-width="1.2" opacity=".7"/></g><rect x="24" y="24" width="12" height="12" transform="rotate(45 30 30)" fill="#F2D98F"/><circle cx="8" cy="8" r="5" fill="#FBEFCE"/></svg></div>
+    <div class="corner br"><svg viewBox="0 0 100 100"><g fill="none" stroke="#E0BC6A" stroke-width="2.2"><path d="M8 92V8h84"/><path d="M18 70V18h52" stroke-width="1.2" opacity=".7"/><path d="M8 8l22 22" stroke-width="1.2" opacity=".7"/></g><rect x="24" y="24" width="12" height="12" transform="rotate(45 30 30)" fill="#F2D98F"/><circle cx="8" cy="8" r="5" fill="#FBEFCE"/></svg></div>
+  </div>
+
+  <main>
+    <p class="eyebrow in d1">PRIVATE EXHIBITION 2026</p>
+
+    <section class="hero">
+      <p class="welcome-en in d2">WELCOME</p>
+      <h1 class="welcome-ja in d3"><span class="gold">ようこそ</span><span class="shine" aria-hidden="true">ようこそ</span></h1>
+      <p class="thanks in d4">本日はご来場いただき、<br>誠にありがとうございます。</p>
+    </section>
+
+    <div class="orn in d5" aria-hidden="true"><i></i><b></b><i></i></div>
+
+    <section class="title">
+      <p class="org in d5">アツミ電氣</p>
+      <h2 class="in d6">プライベート展示会<span class="yr gold">2026</span></h2>
+      <p class="catch in d7">触れて、確かめる。</p>
+    </section>
+
+    <section class="venue in d8">
+      <p class="venue-name gold" id="venueName">名古屋会場</p>
+      <div class="venue-rule"></div>
+      <p class="dates" id="venueDates">2026.10.8 <small>THU</small> — 10.9 <small>FRI</small></p>
+      <p class="hours"><small>OPEN</small>10:00 — 17:00</p>
+    </section>
+
+    <footer class="in d8"><img src="logo.png" alt="アツミ電氣株式会社"></footer>
+  </main>
+
+  <div id="hotspot"></div>
+  <div id="picker" role="dialog" aria-label="会場の選択">
+    <div class="box">
+      <p>会場を選ぶ</p>
+      <p class="note">「自動」は当日の日付で切り替わります（会期前は次の会場）</p>
+      <div id="pickerBtns"></div>
+      <button class="close" id="pickerClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ───────── 会場と会期 ─────────
+  // end を過ぎるまでその会場を出す（会期前の準備日も次の会場が出る）
+  var VENUES = [
+    {id:'nagoya',  name:'名古屋会場', end:'2026-10-09', dates:'2026.10.8 <small>THU</small> — 10.9 <small>FRI</small>'},
+    {id:'osaka',   name:'大阪会場',   end:'2026-10-16', dates:'2026.10.15 <small>THU</small> — 10.16 <small>FRI</small>'},
+    {id:'tokyo',   name:'東京会場',   end:'2026-11-13', dates:'2026.11.11 <small>WED</small> — 11.13 <small>FRI</small>'},
+    {id:'fukuoka', name:'福岡会場',   end:'2026-11-20', dates:'2026.11.19 <small>THU</small> — 11.20 <small>FRI</small>'}
+  ];
+  var KEY = 'welcome2026.venue';
+
+  function store(get, val){
+    try{
+      if (get) { return localStorage.getItem(KEY); }
+      if (val) { localStorage.setItem(KEY, val); } else { localStorage.removeItem(KEY); }
+    }catch(e){}
+    return null;
+  }
+  function today(){
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+  }
+  function autoVenue(){
+    var t = today();
+    for (var i = 0; i < VENUES.length; i++) { if (VENUES[i].end >= t) { return VENUES[i]; } }
+    return VENUES[VENUES.length-1];
+  }
+  function byId(id){
+    for (var i = 0; i < VENUES.length; i++) { if (VENUES[i].id === id) { return VENUES[i]; } }
+    return null;
+  }
+  function currentVenue(){
+    var q = (location.search.match(/[?&]v=([a-z]+)/) || [])[1];
+    return byId(q) || byId(store(true)) || autoVenue();
+  }
+  var shown = '';
+  function render(){
+    var v = currentVenue();
+    if (v.id === shown) { return; }
+    shown = v.id;
+    document.getElementById('venueName').textContent = v.name;
+    document.getElementById('venueDates').innerHTML = v.dates;
+  }
+  render();
+  setInterval(render, 60000);   // 日付が変わったら自動で次の会場へ
+
+  // ───────── 金の粒子 ─────────
+  // 4K を毎フレーム描くと重い端末（抽選アプリで実測 24fps）なので、canvas は CSS 解像度（DPR1）で描く。
+  // 光の粒は1枚の発光スプライトを drawImage するだけにして、shadowBlur は使わない。
+  var cv = document.getElementById('dust');
+  var ctx = cv.getContext('2d');
+  var W = 0, H = 0, U = 1;
+  function resize(){
+    W = cv.width = Math.round(window.innerWidth);
+    H = cv.height = Math.round(window.innerHeight);
+    U = Math.min(W/100, H*0.5625/100);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function makeSprite(r, inner){
+    var c = document.createElement('canvas');
+    c.width = c.height = r*2;
+    var g = c.getContext('2d');
+    var gr = g.createRadialGradient(r, r, 0, r, r, r);
+    gr.addColorStop(0, 'rgba(255,250,232,1)');
+    gr.addColorStop(inner, 'rgba(242,217,143,.85)');
+    gr.addColorStop(.45, 'rgba(224,188,106,.28)');
+    gr.addColorStop(1, 'rgba(224,188,106,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, r*2, r*2);
+    return c;
+  }
+  var SPR = makeSprite(64, .08);
+  var BOKEH = makeSprite(64, .35);
+
+  var dust = [];
+  var AMBIENT = 70;
+  function spawnAmbient(initial){
+    var big = Math.random() < .12;
+    return {
+      x: Math.random()*W,
+      y: initial ? Math.random()*H : H + 20*U,
+      vx: (Math.random()-.5)*.06*U,
+      vy: -(.05 + Math.random()*.16)*U,
+      s: big ? (3 + Math.random()*4)*U : (.5 + Math.random()*1.3)*U,
+      a: big ? .10 + Math.random()*.12 : .35 + Math.random()*.5,
+      tw: Math.random()*Math.PI*2, tws: .015 + Math.random()*.04,
+      big: big, life: -1
+    };
+  }
+  for (var i = 0; i < AMBIENT; i++) { dust.push(spawnAmbient(true)); }
+
+  var bursts = [];
+  function burst(x, y){
+    var n = 46;
+    for (var k = 0; k < n; k++) {
+      var ang = Math.random()*Math.PI*2;
+      var sp = (.25 + Math.random()*1.1)*U;
+      bursts.push({x:x, y:y, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp - .25*U,
+        s:(.6 + Math.random()*1.6)*U, a:1, life:1, decay:.010 + Math.random()*.014,
+        tw:Math.random()*6, tws:.2});
+    }
+    if (bursts.length > 420) { bursts.splice(0, bursts.length - 420); }
+  }
+
+  var last = 0;
+  function frame(t){
+    requestAnimationFrame(frame);
+    if (t - last < 30) { return; }   // 約33fpsに抑える（端末を熱くしない）
+    var dt = Math.min((t - last)/33, 3);
+    last = t;
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    var p, a, sz;
+    for (var i = 0; i < dust.length; i++) {
+      p = dust[i];
+      p.x += p.vx*dt; p.y += p.vy*dt; p.tw += p.tws*dt;
+      if (p.y < -20*U || p.x < -20*U || p.x > W + 20*U) { dust[i] = spawnAmbient(false); continue; }
+      a = p.a*(.55 + .45*Math.sin(p.tw));
+      sz = p.s*4;
+      ctx.globalAlpha = a;
+      ctx.drawImage(p.big ? BOKEH : SPR, p.x - sz/2, p.y - sz/2, sz, sz);
+    }
+    for (var j = bursts.length - 1; j >= 0; j--) {
+      p = bursts[j];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vx *= Math.pow(.955, dt); p.vy = p.vy*Math.pow(.955, dt) + .018*U*dt;
+      p.life -= p.decay*dt; p.tw += p.tws*dt;
+      if (p.life <= 0) { bursts.splice(j, 1); continue; }
+      a = p.life*(.7 + .3*Math.sin(p.tw));
+      sz = p.s*4*(.6 + .4*p.life);
+      ctx.globalAlpha = a;
+      ctx.drawImage(SPR, p.x - sz/2, p.y - sz/2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  requestAnimationFrame(frame);
+
+  // ───────── タッチ ─────────
+  var stage = document.getElementById('stage');
+  var picker = document.getElementById('picker');
+  function ripple(x, y){
+    var r = document.createElement('div');
+    r.className = 'ripple';
+    r.style.left = x + 'px'; r.style.top = y + 'px';
+    stage.appendChild(r);
+    setTimeout(function(){ if (r.parentNode) { r.parentNode.removeChild(r); } }, 1500);
+  }
+  stage.addEventListener('pointerdown', function(ev){
+    if (picker.classList.contains('open')) { return; }
+    burst(ev.clientX, ev.clientY);
+    ripple(ev.clientX, ev.clientY);
+  });
+
+  // 全画面に入れ直す。全画面の要求はタッチだと pointerup の中でしか通らない（抽選アプリで確認済み）
+  function nudgeFullscreen(){
+    if (document.fullscreenElement || document.webkitFullscreenElement) { return; }
+    var root = document.documentElement;
+    var req = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (!req) { return; }
+    try {
+      var p = req.call(root, {navigationUI:'hide'});
+      if (p && p.catch) { p.catch(function(){}); }
+    } catch(e) {}
+  }
+  document.addEventListener('pointerup', nudgeFullscreen, true);
+  document.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
+
+  // ───────── 会場の手動選択（右上を1.5秒長押し） ─────────
+  var hot = document.getElementById('hotspot');
+  var timer = null;
+  function cancel(){ if (timer) { clearTimeout(timer); timer = null; } }
+  hot.addEventListener('pointerdown', function(){ cancel(); timer = setTimeout(openPicker, 1500); });
+  hot.addEventListener('pointerup', cancel);
+  hot.addEventListener('pointerleave', cancel);
+  hot.addEventListener('pointercancel', cancel);
+
+  var btnBox = document.getElementById('pickerBtns');
+  function openPicker(){
+    timer = null;
+    btnBox.innerHTML = '';
+    var cur = store(true) || '';
+    var list = [{id:'', name:'自動（日付で判定）'}].concat(VENUES);
+    list.forEach(function(v){
+      var b = document.createElement('button');
+      b.textContent = v.name;
+      if (v.id === cur) { b.className = 'on'; }
+      b.addEventListener('click', function(){ store(false, v.id); shown = ''; render(); picker.classList.remove('open'); });
+      btnBox.appendChild(b);
+    });
+    picker.classList.add('open');
+  }
+  document.getElementById('pickerClose').addEventListener('click', function(){ picker.classList.remove('open'); });
+
+  // ───────── 画面を消さない ─────────
+  function keepAwake(){
+    if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') { return; }
+    navigator.wakeLock.request('screen').catch(function(){});
+  }
+  keepAwake();
+  document.addEventListener('visibilitychange', keepAwake);
+
+  // ───────── オフライン ─────────
+  // 抽選アプリの Service Worker は更新時に «自分以外のキャッシュ» を全部消すため、
+  // オンラインで開いたときは毎回このページ側からもキャッシュを詰め直しておく。
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js', {scope:'./'}).catch(function(){});
+    if (navigator.onLine && window.caches) {
+      caches.open('welcome2026-v1').then(function(c){
+        return c.addAll(['./', 'index.html', 'logo.png', 'fonts/ShipporiMinchoB1-Bold.welcome.woff2']);
+      }).catch(function(){});
+    }
+  }
+})();
+</script>
+</body>
+</html>
