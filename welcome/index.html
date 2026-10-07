@@ -48,13 +48,17 @@ body{
     radial-gradient(70% 30% at 50% 100%, rgba(176,140,54,.20), transparent 70%),
     radial-gradient(120% 70% at 50% 30%, var(--navy-3) 0%, var(--navy-2) 30%, var(--navy-1) 62%, var(--navy-0) 100%);
 }
-/* 動くものはすべて #dust の canvas 1枚に描く。巨大な DOM レイヤーを回すと 4K では GPU メモリが尽きて画面が消える（実機で発生） */
+/* 動くものはすべて #dust の canvas 1枚に描き、その canvas を «いちばん上» に置く。
+   ・canvas の上に何か重なると、その要素が丸ごと別レイヤーに追い出される（Overlap）
+   ・CSS アニメ（forwards）は止まった後もレイヤーとして残り続ける
+   この2つで 4K 換算 4,600万px を食い、実機で文字や額縁が消えて紺の背景だけ残った（v2）。
+   → CSS アニメは使わない。入場の演出も canvas に描く。合成レイヤーは «ページ1枚＋canvas» だけにする */
 .vignette{position:absolute;inset:0;
   background:radial-gradient(130% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%);pointer-events:none}
 #dust{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
 /* ───────── 額縁 ───────── */
-.frame{position:absolute;inset:calc(var(--u)*3.2);pointer-events:none;opacity:0;animation:fadeIn 2.4s .2s ease-out forwards}
+.frame{position:absolute;inset:calc(var(--u)*3.2);pointer-events:none}
 .frame::before,.frame::after{content:"";position:absolute;inset:0;border:calc(var(--u)*.22) solid rgba(224,188,106,.75)}
 .frame::after{inset:calc(var(--u)*1.1);border-width:calc(var(--u)*.1);border-color:rgba(224,188,106,.38)}
 .corner{position:absolute;width:calc(var(--u)*11);height:calc(var(--u)*11)}
@@ -84,8 +88,8 @@ main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:ce
 
 .orn{margin:calc(var(--u)*5) 0 calc(var(--u)*4.5);width:calc(var(--u)*62);height:calc(var(--u)*3);
   display:flex;align-items:center;gap:calc(var(--u)*2)}
-.orn i{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--brass) 70%,var(--brass-hi));transform-origin:right;transform:scaleX(0);animation:draw 1.6s 1.6s cubic-bezier(.2,.7,.2,1) forwards}
-.orn i:last-child{background:linear-gradient(270deg,transparent,var(--brass) 70%,var(--brass-hi));transform-origin:left}
+.orn i{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--brass) 70%,var(--brass-hi))}
+.orn i:last-child{background:linear-gradient(270deg,transparent,var(--brass) 70%,var(--brass-hi))}
 .orn b{width:calc(var(--u)*1.9);height:calc(var(--u)*1.9);transform:rotate(45deg);
   background:linear-gradient(135deg,var(--brass-hi),var(--brass-mid));box-shadow:0 0 calc(var(--u)*2) rgba(242,217,143,.8)}
 
@@ -109,13 +113,8 @@ main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:ce
 footer{margin-top:calc(var(--u)*5)}
 footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
 
-/* 入場の演出 */
-.in{opacity:0;transform:translateY(calc(var(--u)*2.4));animation:rise 1.6s cubic-bezier(.2,.7,.2,1) forwards}
-.d1{animation-delay:.5s}.d2{animation-delay:.9s}.d3{animation-delay:1.3s}.d4{animation-delay:1.9s}
-.d5{animation-delay:2.3s}.d6{animation-delay:2.7s}.d7{animation-delay:3.1s}.d8{animation-delay:3.5s}
-
-/* 会場の手動選択（スタッフ用） */
-#hotspot{position:absolute;right:0;top:0;width:calc(var(--u)*14);height:calc(var(--u)*14);z-index:5}
+/* 会場の手動選択（スタッフ用）。#hotspot は canvas の下だが、canvas は pointer-events:none なので触れる */
+#hotspot{position:absolute;right:0;top:0;width:calc(var(--u)*14);height:calc(var(--u)*14)}
 #picker{position:absolute;inset:0;z-index:10;display:none;align-items:center;justify-content:center;
   background:rgba(3,6,15,.86);cursor:default}
 #picker.open{display:flex}
@@ -126,15 +125,10 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
   letter-spacing:.2em;color:var(--ink);background:transparent;border:1px solid rgba(224,188,106,.55)}
 #picker button.on{background:linear-gradient(180deg,var(--brass),var(--brass-mid));color:var(--navy-1);border-color:var(--brass-hi)}
 #picker button.close{margin-top:calc(var(--u)*4);font-size:calc(var(--u)*2.8);color:var(--ink-dim);border-color:transparent}
-
-@keyframes fadeIn{to{opacity:1}}
-@keyframes rise{to{opacity:1;transform:none}}
-@keyframes draw{to{transform:scaleX(1)}}
 </style>
 </head>
 <body>
 <div id="stage">
-  <canvas id="dust"></canvas>
   <div class="vignette"></div>
 
   <div class="frame" aria-hidden="true">
@@ -145,33 +139,34 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
   </div>
 
   <main>
-    <p class="eyebrow in d1">PRIVATE EXHIBITION 2026</p>
+    <p class="eyebrow">PRIVATE EXHIBITION 2026</p>
 
     <section class="hero">
-      <p class="welcome-en in d2">WELCOME</p>
-      <h1 class="welcome-ja in d3" id="hello"><span class="gold">ようこそ</span></h1>
-      <p class="thanks in d4">本日はご来場いただき、<br>誠にありがとうございます。</p>
+      <p class="welcome-en">WELCOME</p>
+      <h1 class="welcome-ja" id="hello"><span class="gold">ようこそ</span></h1>
+      <p class="thanks">本日はご来場いただき、<br>誠にありがとうございます。</p>
     </section>
 
-    <div class="orn in d5" aria-hidden="true"><i></i><b></b><i></i></div>
+    <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
 
     <section class="title">
-      <p class="org in d5">アツミ電氣</p>
-      <h2 class="in d6">プライベート展示会<span class="yr gold" id="year">2026</span></h2>
-      <p class="catch in d7">触れて、確かめる。</p>
+      <p class="org">アツミ電氣</p>
+      <h2>プライベート展示会<span class="yr gold" id="year">2026</span></h2>
+      <p class="catch">触れて、確かめる。</p>
     </section>
 
-    <section class="venue in d8">
+    <section class="venue">
       <p class="venue-name gold" id="venueName">名古屋会場</p>
       <div class="venue-rule"></div>
       <p class="dates" id="venueDates">2026.10.8 <small>THU</small> — 10.9 <small>FRI</small></p>
       <p class="hours"><small>OPEN</small>10:00 — 17:00</p>
     </section>
 
-    <footer class="in d8"><img src="logo.png" alt="アツミ電氣株式会社"></footer>
+    <footer><img src="logo.png" alt="アツミ電氣株式会社"></footer>
   </main>
 
   <div id="hotspot"></div>
+  <canvas id="dust"></canvas>
   <div id="picker" role="dialog" aria-label="会場の選択">
     <div class="box">
       <p>会場を選ぶ</p>
@@ -300,6 +295,24 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
       g.fillStyle = gr; g.fillRect(r - wh[0]/2, r - wh[1]/2, wh[0], wh[1]);
     });
   });
+
+  // 入場の演出：紺の幕が上から下へ晴れていく（CSS アニメの代わり。幕の縁だけ sprite、残りは塗りつぶし）
+  var REVEAL = 3600, NAVY = '#03060F';
+  var EDGE = sprite(256, function(g, n){
+    var gr = g.createLinearGradient(0, 0, 0, n);
+    gr.addColorStop(0, 'rgba(3,6,15,0)'); gr.addColorStop(1, 'rgba(3,6,15,1)');
+    g.fillStyle = gr; g.fillRect(0, 0, n, n);
+  });
+  function curtain(el){
+    var k = Math.min(el/REVEAL, 1), e = 1 - Math.pow(1 - k, 2), band = 45*U;
+    var y = -band + (H + band)*e;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.drawImage(EDGE, 0, y, W, band);
+    ctx.fillStyle = NAVY;
+    ctx.fillRect(0, y + band - 1, W, H - y - band + 2);
+  }
+  curtain(0);   // 最初の描画までの一瞬、文字が先に見えないように
 
   var AMBIENT = 60;
   var dust = [];
@@ -430,6 +443,7 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
       ctx.globalAlpha = q;
       ctx.drawImage(STAR, p.x - sz, p.y - sz, sz*2, sz*2);
     }
+    if (t - start < REVEAL) { curtain(t - start); }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -504,7 +518,7 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js', {scope:'./'}).catch(function(){});
     if (navigator.onLine && window.caches) {
-      caches.open('welcome2026-v2').then(function(c){
+      caches.open('welcome2026-v3').then(function(c){
         return c.addAll(['./', 'index.html', 'logo.png', 'fonts/ShipporiMinchoB1-Bold.welcome.woff2']);
       }).catch(function(){});
     }
