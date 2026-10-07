@@ -2,7 +2,7 @@
 //
 // 抽選アプリの SW とは別物。抽選アプリ側のファイル・キャッシュには一切触れない。
 // 【更新するときは CACHE_NAME の数字と index.html 内の 'welcome2026-vN' を両方上げる】
-const CACHE_NAME = 'welcome2026-v1';
+const CACHE_NAME = 'welcome2026-v2';
 const PRECACHE_URLS = ['./', './index.html', './logo.png', './fonts/ShipporiMinchoB1-Bold.welcome.woff2'];
 
 self.addEventListener('install', function (event) {

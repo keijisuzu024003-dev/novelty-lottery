@@ -45,33 +45,10 @@ body{
 /* ───────── 背景 ───────── */
 #stage{position:fixed;inset:0;overflow:hidden;
   background:
+    radial-gradient(70% 30% at 50% 100%, rgba(176,140,54,.20), transparent 70%),
     radial-gradient(120% 70% at 50% 30%, var(--navy-3) 0%, var(--navy-2) 30%, var(--navy-1) 62%, var(--navy-0) 100%);
 }
-/* 回転する光の筋（合成レイヤーで回すだけなので軽い） */
-.rays{position:absolute;left:50%;top:31%;width:calc(var(--u)*260);height:calc(var(--u)*260);
-  margin:calc(var(--u)*-130) 0 0 calc(var(--u)*-130);
-  background:repeating-conic-gradient(from 0deg,
-    rgba(224,188,106,.055) 0deg 2.5deg, rgba(224,188,106,0) 2.5deg 15deg);
-  -webkit-mask-image:radial-gradient(circle, #000 0%, rgba(0,0,0,.55) 30%, transparent 62%);
-          mask-image:radial-gradient(circle, #000 0%, rgba(0,0,0,.55) 30%, transparent 62%);
-  animation:spin 140s linear infinite;will-change:transform;opacity:0;
-  animation-name:spin, fadeIn;animation-duration:140s, 3s;animation-delay:0s, .4s;
-  animation-timing-function:linear, ease-out;animation-iteration-count:infinite, 1;animation-fill-mode:none, forwards;
-}
-.rays.r2{width:calc(var(--u)*200);height:calc(var(--u)*200);margin:calc(var(--u)*-100) 0 0 calc(var(--u)*-100);
-  background:repeating-conic-gradient(from 7deg,
-    rgba(251,239,206,.04) 0deg 1deg, rgba(251,239,206,0) 1deg 11deg);
-  animation-duration:200s, 3s;animation-direction:reverse, normal;
-}
-/* 中央の光だまり（ゆっくり呼吸） */
-.halo{position:absolute;left:50%;top:31%;width:calc(var(--u)*150);height:calc(var(--u)*110);
-  margin:calc(var(--u)*-55) 0 0 calc(var(--u)*-75);border-radius:50%;
-  background:radial-gradient(closest-side, rgba(242,217,143,.30), rgba(224,188,106,.10) 45%, transparent 100%);
-  animation:breathe 7s ease-in-out infinite;will-change:opacity,transform}
-/* 下から立ちのぼる金の霞 */
-.mist{position:absolute;left:-10%;right:-10%;bottom:-6%;height:42%;
-  background:radial-gradient(60% 70% at 50% 100%, rgba(176,140,54,.22), transparent 70%);
-  animation:breathe 11s ease-in-out infinite reverse}
+/* 動くものはすべて #dust の canvas 1枚に描く。巨大な DOM レイヤーを回すと 4K では GPU メモリが尽きて画面が消える（実機で発生） */
 .vignette{position:absolute;inset:0;
   background:radial-gradient(130% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%);pointer-events:none}
 #dust{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
@@ -102,13 +79,7 @@ main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:ce
   -webkit-text-fill-color:transparent}
 .welcome-ja{position:relative;margin-top:calc(var(--u)*2.5);font-size:calc(var(--u)*19);line-height:1.15;white-space:nowrap;
   letter-spacing:.04em;text-indent:.04em;
-  filter:drop-shadow(0 calc(var(--u)*.5) calc(var(--u)*1.6) rgba(0,0,0,.65)) drop-shadow(0 0 calc(var(--u)*3.5) rgba(224,188,106,.35))}
-/* 文字の上を光が走る。文字と同じ形に切り抜いた別レイヤーの背景位置だけを動かす */
-.shine{position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(105deg, transparent 38%, rgba(255,250,235,.0) 42%, rgba(255,250,235,.95) 50%, rgba(255,250,235,0) 58%, transparent 62%);
-  background-size:300% 100%;background-position:150% 0;
-  -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
-  animation:shine 8s 3.2s ease-in-out infinite}
+  filter:drop-shadow(0 calc(var(--u)*.4) calc(var(--u)*.8) rgba(0,0,0,.6))}
 .thanks{margin-top:calc(var(--u)*4);font-size:calc(var(--u)*4.5);line-height:1.75;letter-spacing:.12em;color:var(--ink)}
 
 .orn{margin:calc(var(--u)*5) 0 calc(var(--u)*4.5);width:calc(var(--u)*62);height:calc(var(--u)*3);
@@ -121,8 +92,7 @@ main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:ce
 .title .org{font-size:calc(var(--u)*4.4);letter-spacing:.3em;text-indent:.3em;color:var(--ink)}
 .title{margin-bottom:calc(var(--u)*5)}
 .title h2{margin-top:calc(var(--u)*1.6);font-size:calc(var(--u)*7);font-weight:700;letter-spacing:.06em;line-height:1.25;color:var(--ink)}
-.title h2 .yr{display:block;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*11);letter-spacing:.1em;text-indent:.1em;line-height:1.05;
-  filter:drop-shadow(0 0 calc(var(--u)*2.5) rgba(224,188,106,.35))}
+.title h2 .yr{display:block;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*11);letter-spacing:.1em;text-indent:.1em;line-height:1.05}
 .title .catch{margin-top:calc(var(--u)*3.5);font-size:calc(var(--u)*5.2);letter-spacing:.24em;text-indent:.24em;color:var(--brass-hi)}
 
 .venue{margin-top:auto;position:relative;width:calc(var(--u)*76);padding:calc(var(--u)*3.4) calc(var(--u)*4) calc(var(--u)*3.6);
@@ -144,12 +114,6 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
 .d1{animation-delay:.5s}.d2{animation-delay:.9s}.d3{animation-delay:1.3s}.d4{animation-delay:1.9s}
 .d5{animation-delay:2.3s}.d6{animation-delay:2.7s}.d7{animation-delay:3.1s}.d8{animation-delay:3.5s}
 
-/* タッチの波紋 */
-.ripple{position:absolute;width:calc(var(--u)*6);height:calc(var(--u)*6);margin:calc(var(--u)*-3) 0 0 calc(var(--u)*-3);
-  border-radius:50%;border:calc(var(--u)*.35) solid rgba(242,217,143,.9);pointer-events:none;
-  box-shadow:0 0 calc(var(--u)*3) rgba(242,217,143,.6), inset 0 0 calc(var(--u)*2) rgba(242,217,143,.4);
-  animation:ripple 1.4s cubic-bezier(.1,.6,.3,1) forwards}
-
 /* 会場の手動選択（スタッフ用） */
 #hotspot{position:absolute;right:0;top:0;width:calc(var(--u)*14);height:calc(var(--u)*14);z-index:5}
 #picker{position:absolute;inset:0;z-index:10;display:none;align-items:center;justify-content:center;
@@ -163,22 +127,13 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
 #picker button.on{background:linear-gradient(180deg,var(--brass),var(--brass-mid));color:var(--navy-1);border-color:var(--brass-hi)}
 #picker button.close{margin-top:calc(var(--u)*4);font-size:calc(var(--u)*2.8);color:var(--ink-dim);border-color:transparent}
 
-@keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeIn{to{opacity:1}}
-@keyframes breathe{0%,100%{opacity:.75;transform:scale(1)}50%{opacity:1;transform:scale(1.06)}}
 @keyframes rise{to{opacity:1;transform:none}}
 @keyframes draw{to{transform:scaleX(1)}}
-@keyframes shine{0%{background-position:150% 0}28%,100%{background-position:-50% 0}}
-@keyframes ripple{0%{opacity:1;transform:scale(.4)}100%{opacity:0;transform:scale(9)}}
-@media (prefers-reduced-motion:reduce){.rays,.halo,.mist,.shine{animation:none}}
 </style>
 </head>
 <body>
 <div id="stage">
-  <div class="rays"></div>
-  <div class="rays r2"></div>
-  <div class="halo"></div>
-  <div class="mist"></div>
   <canvas id="dust"></canvas>
   <div class="vignette"></div>
 
@@ -194,7 +149,7 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
 
     <section class="hero">
       <p class="welcome-en in d2">WELCOME</p>
-      <h1 class="welcome-ja in d3"><span class="gold">ようこそ</span><span class="shine" aria-hidden="true">ようこそ</span></h1>
+      <h1 class="welcome-ja in d3" id="hello"><span class="gold">ようこそ</span></h1>
       <p class="thanks in d4">本日はご来場いただき、<br>誠にありがとうございます。</p>
     </section>
 
@@ -202,7 +157,7 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
 
     <section class="title">
       <p class="org in d5">アツミ電氣</p>
-      <h2 class="in d6">プライベート展示会<span class="yr gold">2026</span></h2>
+      <h2 class="in d6">プライベート展示会<span class="yr gold" id="year">2026</span></h2>
       <p class="catch in d7">触れて、確かめる。</p>
     </section>
 
@@ -276,94 +231,204 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
   render();
   setInterval(render, 60000);   // 日付が変わったら自動で次の会場へ
 
-  // ───────── 金の粒子 ─────────
-  // 4K を毎フレーム描くと重い端末（抽選アプリで実測 24fps）なので、canvas は CSS 解像度（DPR1）で描く。
-  // 光の粒は1枚の発光スプライトを drawImage するだけにして、shadowBlur は使わない。
+  // ───────── 動く演出（canvas 1枚） ─────────
+  // 実機（A55・4K・Chrome 98）でカクつき→画面が消えた反省から:
+  //  - 動くものは全部この canvas に描く。DOM の大きなレイヤーは動かさない
+  //  - canvas は CSS 解像度の半分（540×960）で持ち、CSS で引き伸ばす。光の演出なのでぼけても分からない
+  //  - 描くのは事前に作った絵（スプライト）の drawImage だけ。shadowBlur・filter・グラデーションの毎フレーム生成はしない
+  //  - 30fps 上限。重いと判定したら粒を減らし、それでも重ければ光の筋の回転を止める
+  var SCALE = 0.5;
   var cv = document.getElementById('dust');
-  var ctx = cv.getContext('2d');
+  var ctx = cv.getContext('2d', {alpha: true});
   var W = 0, H = 0, U = 1;
   function resize(){
-    W = cv.width = Math.round(window.innerWidth);
-    H = cv.height = Math.round(window.innerHeight);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W*SCALE); cv.height = Math.round(H*SCALE);
+    ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
     U = Math.min(W/100, H*0.5625/100);
   }
   resize();
   window.addEventListener('resize', resize);
 
-  function makeSprite(r, inner){
+  function sprite(size, draw){
     var c = document.createElement('canvas');
-    c.width = c.height = r*2;
-    var g = c.getContext('2d');
-    var gr = g.createRadialGradient(r, r, 0, r, r, r);
-    gr.addColorStop(0, 'rgba(255,250,232,1)');
-    gr.addColorStop(inner, 'rgba(242,217,143,.85)');
-    gr.addColorStop(.45, 'rgba(224,188,106,.28)');
-    gr.addColorStop(1, 'rgba(224,188,106,0)');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, r*2, r*2);
+    c.width = c.height = size;
+    draw(c.getContext('2d'), size);
     return c;
   }
-  var SPR = makeSprite(64, .08);
-  var BOKEH = makeSprite(64, .35);
+  function glow(inner){
+    return sprite(64, function(g, n){
+      var r = n/2, gr = g.createRadialGradient(r, r, 0, r, r, r);
+      gr.addColorStop(0, 'rgba(255,250,232,1)');
+      gr.addColorStop(inner, 'rgba(242,217,143,.85)');
+      gr.addColorStop(.45, 'rgba(224,188,106,.28)');
+      gr.addColorStop(1, 'rgba(224,188,106,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, n, n);
+    });
+  }
+  var SPR = glow(.08), BOKEH = glow(.35);
+  // 光の筋：放射状の帯を描いてから、中心から外へ消えるように切り抜いておく
+  var RAYS = sprite(512, function(g, n){
+    var r = n/2, i, a;
+    g.translate(r, r);
+    for (i = 0; i < 24; i++) {
+      a = i*Math.PI*2/24;
+      g.fillStyle = 'rgba(224,188,106,.16)';
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, a, a + .045); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(251,239,206,.10)';
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, a + .2, a + .215); g.closePath(); g.fill();
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'destination-in';
+    var m = g.createRadialGradient(r, r, 0, r, r, r);
+    m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(.35, 'rgba(0,0,0,.5)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = m; g.fillRect(0, 0, n, n);
+  });
+  var HALO = sprite(256, function(g, n){
+    var r = n/2, gr = g.createRadialGradient(r, r, 0, r, r, r);
+    gr.addColorStop(0, 'rgba(242,217,143,.34)'); gr.addColorStop(.45, 'rgba(224,188,106,.11)'); gr.addColorStop(1, 'rgba(224,188,106,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, n, n);
+  });
+  // きらめき（十字の光）。「ようこそ」「2026」の上にときどき灯す
+  var STAR = sprite(128, function(g, n){
+    var r = n/2;
+    g.drawImage(glow(.12), r*.6, r*.6, r*.8, r*.8);
+    g.globalCompositeOperation = 'lighter';
+    [[n, n*.035], [n*.035, n]].forEach(function(wh){
+      var gr = g.createRadialGradient(r, r, 0, r, r, r);
+      gr.addColorStop(0, 'rgba(255,250,232,.95)'); gr.addColorStop(1, 'rgba(242,217,143,0)');
+      g.fillStyle = gr; g.fillRect(r - wh[0]/2, r - wh[1]/2, wh[0], wh[1]);
+    });
+  });
 
+  var AMBIENT = 60;
   var dust = [];
-  var AMBIENT = 70;
   function spawnAmbient(initial){
     var big = Math.random() < .12;
     return {
-      x: Math.random()*W,
-      y: initial ? Math.random()*H : H + 20*U,
-      vx: (Math.random()-.5)*.06*U,
-      vy: -(.05 + Math.random()*.16)*U,
+      x: Math.random()*W, y: initial ? Math.random()*H : H + 20*U,
+      vx: (Math.random()-.5)*.06*U, vy: -(.05 + Math.random()*.16)*U,
       s: big ? (3 + Math.random()*4)*U : (.5 + Math.random()*1.3)*U,
       a: big ? .10 + Math.random()*.12 : .35 + Math.random()*.5,
-      tw: Math.random()*Math.PI*2, tws: .015 + Math.random()*.04,
-      big: big, life: -1
+      tw: Math.random()*Math.PI*2, tws: .015 + Math.random()*.04, big: big
     };
   }
   for (var i = 0; i < AMBIENT; i++) { dust.push(spawnAmbient(true)); }
 
-  var bursts = [];
+  var bursts = [], rings = [], stars = [];
+  var MAX_BURST = 260;
   function burst(x, y){
-    var n = 46;
-    for (var k = 0; k < n; k++) {
-      var ang = Math.random()*Math.PI*2;
-      var sp = (.25 + Math.random()*1.1)*U;
+    for (var k = 0; k < 36; k++) {
+      var ang = Math.random()*Math.PI*2, sp = (.25 + Math.random()*1.1)*U;
       bursts.push({x:x, y:y, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp - .25*U,
-        s:(.6 + Math.random()*1.6)*U, a:1, life:1, decay:.010 + Math.random()*.014,
-        tw:Math.random()*6, tws:.2});
+        s:(.6 + Math.random()*1.6)*U, life:1, decay:.012 + Math.random()*.014, tw:Math.random()*6});
     }
-    if (bursts.length > 420) { bursts.splice(0, bursts.length - 420); }
+    if (bursts.length > MAX_BURST) { bursts.splice(0, bursts.length - MAX_BURST); }
+    rings.push({x:x, y:y, life:1});
+    if (rings.length > 6) { rings.shift(); }
   }
 
-  var last = 0;
+  // きらめきの置き場所（文字の矩形）。入場演出で位置が動くので数秒ごとに測り直す
+  var spots = [];
+  function measureSpots(){
+    spots = [];
+    ['hello', 'year'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (!el) { return; }
+      var r = el.getBoundingClientRect();
+      if (r.width > 0) { spots.push(r); }
+    });
+  }
+  setTimeout(measureSpots, 4000);
+  setInterval(measureSpots, 30000);
+  var nextStar = 4500;
+
+  var raysOn = true, rot = 0, last = 0, start = 0;
+  var slowFrames = 0, sampled = 0, degraded = 0;
+  function degrade(){
+    degraded++;
+    if (degraded === 1) { dust.length = 36; MAX_BURST = 120; }
+    else if (degraded === 2) { raysOn = false; }
+  }
+
   function frame(t){
     requestAnimationFrame(frame);
-    if (t - last < 30) { return; }   // 約33fpsに抑える（端末を熱くしない）
-    var dt = Math.min((t - last)/33, 3);
+    if (!start) { start = t; last = t; }
+    var gap = t - last;
+    if (gap < 31) { return; }            // 30fps 上限
     last = t;
+    // 重さの判定：最初の10秒を除き、5秒ごとに «70ms を超えたフレームが3割» なら一段軽くする
+    if (t - start > 10000) {
+      sampled++; if (gap > 70) { slowFrames++; }
+      if (sampled >= 150) { if (slowFrames > 45 && degraded < 2) { degrade(); } sampled = 0; slowFrames = 0; }
+    }
+    var dt = Math.min(gap/33, 3);
+    var el = (t - start)/1000;
     ctx.clearRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
-    var p, a, sz;
-    for (var i = 0; i < dust.length; i++) {
-      p = dust[i];
+
+    // 光の筋と光だまり（最初の3秒でゆっくり現れる）
+    var fin = Math.min(el/3, 1);
+    var cx = W/2, cy = H*.31;
+    if (raysOn) { rot += .00075*dt; }
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.globalAlpha = .55*fin;
+    ctx.rotate(rot);
+    ctx.drawImage(RAYS, -130*U, -130*U, 260*U, 260*U);
+    ctx.rotate(-rot*2.3 + 1.1);
+    ctx.globalAlpha = .35*fin;
+    ctx.drawImage(RAYS, -95*U, -95*U, 190*U, 190*U);
+    ctx.restore();
+    ctx.globalAlpha = fin*(.8 + .2*Math.sin(el*Math.PI*2/7));
+    ctx.drawImage(HALO, cx - 75*U, cy - 55*U, 150*U, 110*U);
+
+    var p, a, sz, k;
+    for (k = 0; k < dust.length; k++) {
+      p = dust[k];
       p.x += p.vx*dt; p.y += p.vy*dt; p.tw += p.tws*dt;
-      if (p.y < -20*U || p.x < -20*U || p.x > W + 20*U) { dust[i] = spawnAmbient(false); continue; }
-      a = p.a*(.55 + .45*Math.sin(p.tw));
-      sz = p.s*4;
+      if (p.y < -20*U || p.x < -20*U || p.x > W + 20*U) { dust[k] = spawnAmbient(false); continue; }
+      a = p.a*(.55 + .45*Math.sin(p.tw)); sz = p.s*4;
       ctx.globalAlpha = a;
       ctx.drawImage(p.big ? BOKEH : SPR, p.x - sz/2, p.y - sz/2, sz, sz);
     }
-    for (var j = bursts.length - 1; j >= 0; j--) {
-      p = bursts[j];
+    for (k = bursts.length - 1; k >= 0; k--) {
+      p = bursts[k];
       p.x += p.vx*dt; p.y += p.vy*dt;
       p.vx *= Math.pow(.955, dt); p.vy = p.vy*Math.pow(.955, dt) + .018*U*dt;
-      p.life -= p.decay*dt; p.tw += p.tws*dt;
-      if (p.life <= 0) { bursts.splice(j, 1); continue; }
-      a = p.life*(.7 + .3*Math.sin(p.tw));
+      p.life -= p.decay*dt; p.tw += .2*dt;
+      if (p.life <= 0) { bursts.splice(k, 1); continue; }
       sz = p.s*4*(.6 + .4*p.life);
-      ctx.globalAlpha = a;
+      ctx.globalAlpha = p.life*(.7 + .3*Math.sin(p.tw));
       ctx.drawImage(SPR, p.x - sz/2, p.y - sz/2, sz, sz);
+    }
+    // 波紋（輪を1本描くだけ）
+    ctx.globalCompositeOperation = 'source-over';
+    for (k = rings.length - 1; k >= 0; k--) {
+      p = rings[k];
+      p.life -= .028*dt;
+      if (p.life <= 0) { rings.splice(k, 1); continue; }
+      var e = 1 - p.life;
+      ctx.globalAlpha = p.life*.9;
+      ctx.strokeStyle = '#F2D98F';
+      ctx.lineWidth = .35*U*(.5 + p.life);
+      ctx.beginPath(); ctx.arc(p.x, p.y, (1.2 + 26*(1 - Math.pow(1 - e, 3)))*U, 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    // きらめき
+    if (spots.length && t - start > nextStar) {
+      nextStar = t - start + 1200 + Math.random()*1600;
+      var r = spots[Math.random() < .7 ? 0 : spots.length - 1];
+      stars.push({x:r.left + r.width*(.08 + Math.random()*.84), y:r.top + r.height*(.2 + Math.random()*.5), life:1, s:(5 + Math.random()*5)*U});
+    }
+    for (k = stars.length - 1; k >= 0; k--) {
+      p = stars[k];
+      p.life -= .03*dt;
+      if (p.life <= 0) { stars.splice(k, 1); continue; }
+      var q = Math.sin(p.life*Math.PI);
+      sz = p.s*q;
+      ctx.globalAlpha = q;
+      ctx.drawImage(STAR, p.x - sz, p.y - sz, sz*2, sz*2);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -373,18 +438,17 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
   // ───────── タッチ ─────────
   var stage = document.getElementById('stage');
   var picker = document.getElementById('picker');
-  function ripple(x, y){
-    var r = document.createElement('div');
-    r.className = 'ripple';
-    r.style.left = x + 'px'; r.style.top = y + 'px';
-    stage.appendChild(r);
-    setTimeout(function(){ if (r.parentNode) { r.parentNode.removeChild(r); } }, 1500);
-  }
+  var lastTouch = Date.now();
   stage.addEventListener('pointerdown', function(ev){
+    lastTouch = Date.now();
     if (picker.classList.contains('open')) { return; }
     burst(ev.clientX, ev.clientY);
-    ripple(ev.clientX, ev.clientY);
   });
+
+  // 保険：3時間ごと、1分以上だれも触っていなければ読み込み直す（オフラインでも保存分から開く）
+  setInterval(function(){
+    if (Date.now() - lastTouch > 60000 && !picker.classList.contains('open')) { location.reload(); }
+  }, 3*60*60*1000);
 
   // 全画面に入れ直す。全画面の要求はタッチだと pointerup の中でしか通らない（抽選アプリで確認済み）
   function nudgeFullscreen(){
@@ -440,7 +504,7 @@ footer img{height:calc(var(--u)*4.4);width:auto;display:block;opacity:.92}
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js', {scope:'./'}).catch(function(){});
     if (navigator.onLine && window.caches) {
-      caches.open('welcome2026-v1').then(function(c){
+      caches.open('welcome2026-v2').then(function(c){
         return c.addAll(['./', 'index.html', 'logo.png', 'fonts/ShipporiMinchoB1-Bold.welcome.woff2']);
       }).catch(function(){});
     }
