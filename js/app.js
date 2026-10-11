@@ -517,7 +517,7 @@ window.NV = window.NV || {};
     try { NV.sound.whoosh(); } catch (e) {}
     try { NV.sound.rollStart(); } catch (e) {}
     // near-miss は切る。120°の扇で «惜しい» は成立しない
-    try { wheel.setRanks(BONUS_RANKS, { nearTarget: null }); } catch (e) {}
+    try { wheel.setRanks(BONUS_RANKS, { nearTarget: null, split: false }); } catch (e) {}
 
     var settled = false;
     var finish = function(){

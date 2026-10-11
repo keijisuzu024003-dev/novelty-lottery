@@ -9,6 +9,8 @@ window.NV = window.NV || {};
   var TAU = Math.PI * 2;
   var PEG_COUNT = 72;           // 縁の目盛り（5度ごと）＝カチカチ音のもと。扇の枚数とは切り離す
   var MIN_LABEL_DEG = 12;       // これより細い扇には等級名を出さない（潰れて読めないため）
+  var TARGET_PIECE_DEG = 22;    // 等級を割るときの1枚の目安幅
+  var MIN_PIECE_DEG = 16;       // 割った1枚の下限。MIN_LABEL_DEG(12) より余裕を持たせる
   var IDLE_SPEED = 0.06;        // 待機中の自転速度 [rad/s]
   var GOLD = "#FFD97A";
   // 見出し用の明朝（app.css で @font-face 済み）。canvas は CSS を継承しないので
@@ -152,22 +154,24 @@ window.NV = window.NV || {};
 
   // ---- セグメント生成 ----
   //
-  // 等級1つにつき扇1枚。幅＝その等級の確率そのもの。
+  // 幅の合計＝その等級の確率。ただし «回っている途中で結果が分かってしまう» のを避けるため、
+  // 特賞以外の等級は複数枚に割って円周へ散らす（2026-10-11 v25・案A）。
   //
-  // 以前は等級を複数枚に割って円周へ散らしていた（3等62%を1枚223°で置くと
-  // 盤の6割が同じ色になり «まあ3等だろう» が回す前に伝わるため）。
-  // 特賞（幅3.6°）を入れたことで «盤で狙う一点» がそちらへ移ったので、1枚に戻した。
-  // 緊張は «どの等級に入るか» ではなく «あの金の線に入るか» で作る。
+  //   大阪（rj1 / r1 7 / r2 28 / r3 64）:
+  //     [1等 25.2° + 特賞 3.6°] 3等 2等 3等 2等 3等 2等 3等 2等 3等 2等 3等   ＝13枚
   //
-  // 並びは 1等 → 特賞 → 2等 → 3等。特賞を1等の隣に置くと «高い側の一角» として
-  // ひとまとまりに見え、指針がそこを通り抜けるあいだ緊張が途切れない。
+  // ・特賞は常に1枚（ニアミスの対象。割らない）。1等の直後に付けて «高い側の一角» にする
+  // ・いちばん広い等級（フィラー＝3等）を «ユニット» の間に挟んで、同じ色が隣り合わないようにする
+  // ・1等は割らない：7% は 25.2° で、2枚だと 12.6° になり文字と余白が持たない
+  // ・ボーナス盤（1個/2個/3個）は opts.split=false で割らず 120° のまま
   //
   // 特賞は自前の在庫を持たない（noStock）。全体に在庫がある限り盤に残す。
   // 在庫0の «普通の» 等級は盤から外して残りで正規化する。外さないと
   // 「絶対に止まらない大きな扇」が残り、見ている人に不自然に映るため。
   // 例外を投げない：ranks が空 / weight が全部0以下でも必ず何か返す。
 
-  function buildSegments(ranks) {
+  function buildSegments(ranks, opts) {
+    var doSplit = !(opts && opts.split === false);
     var list = [];
     try {
       list = (ranks || []).filter(function (r) { return r && typeof r === "object"; });
@@ -235,15 +239,25 @@ window.NV = window.NV || {};
       totalW = order.length;
     }
 
+    // 並べる «ピース» の列（rank の添字と幅[rad]）を作る
+    var pieces = doSplit ? splitPieces(order, weights, totalW) : null;
+    if (!pieces) {
+      pieces = [];
+      for (var k0 = 0; k0 < order.length; k0++) {
+        pieces.push({ k: k0, rad: (weights[k0] / totalW) * TAU });
+      }
+    }
+
     var segments = [];
     var cursor = 0;
-    for (var k = 0; k < order.length; k++) {
-      var rad = (weights[k] / totalW) * TAU;
+    for (var k = 0; k < pieces.length; k++) {
+      var rad = pieces[k].rad;
       // 端数の積み残しで最後に隙間が出ないよう、最後の1枚は残り全部にする
-      if (k === order.length - 1) rad = TAU - cursor;
+      if (k === pieces.length - 1) rad = TAU - cursor;
+      var rk = order[pieces[k].k];
       segments.push({
-        rankId: order[k].id,
-        rank: order[k],
+        rankId: rk.id,
+        rank: rk,
         soldOut: soldOutAll,
         start: cursor,
         end: cursor + rad
@@ -251,6 +265,73 @@ window.NV = window.NV || {};
       cursor += rad;
     }
     return segments;
+  }
+
+  // 特賞以外の等級を割って並べる。割れない盤（普通の等級が1つ以下）は null を返し、呼び出し側が1等級1枚で組む。
+  // order は特賞を «最初の普通の等級» の直後へ移した後の並び。
+  function splitPieces(order, weights, totalW) {
+    var jIdx = -1, firstIdx = -1, fillerIdx = -1, i;
+    for (i = 0; i < order.length; i++) {
+      if (order[i].jackpot) { if (jIdx < 0) jIdx = i; continue; }
+      if (firstIdx < 0) firstIdx = i;
+      if (fillerIdx < 0 || weights[i] > weights[fillerIdx]) fillerIdx = i;
+    }
+    var normalCount = order.length - (jIdx >= 0 ? 1 : 0);
+    if (normalCount < 2) return null;          // 割る相手が無い → 従来どおり
+    if (firstIdx === fillerIdx) return null;   // 先頭の等級がフィラー自身（同じ重みが並ぶ等）は割らない
+
+    function degOf(idx) { return (weights[idx] / totalW) * 360; }
+    function radOf(idx, n) { return (degOf(idx) / n / 360) * TAU; }
+
+    // フィラー以外の等級を n 枚へ（目安 TARGET、下限 MIN）。特賞は割らない
+    var counts = {};
+    for (i = 0; i < order.length; i++) {
+      if (i === jIdx || i === fillerIdx) continue;
+      var d = degOf(i);
+      counts[i] = Math.max(1, Math.min(Math.round(d / TARGET_PIECE_DEG), Math.floor(d / MIN_PIECE_DEG)));
+    }
+
+    // ユニット列。先頭は «最初の普通の等級の1枚目 + 特賞»。
+    // 残りは各等級 i 番目のピースの位置を (i+0.5)/n とみなして昇順に並べ、同じ等級が固まらないよう散らす
+    var units = [];
+    var head = [{ k: firstIdx, rad: radOf(firstIdx, counts[firstIdx]) }];
+    if (jIdx >= 0) head.push({ k: jIdx, rad: (weights[jIdx] / totalW) * TAU });
+    units.push(head);
+
+    var rest = [];
+    for (i = 0; i < order.length; i++) {
+      if (i === jIdx || i === fillerIdx) continue;
+      for (var p = (i === firstIdx ? 1 : 0); p < counts[i]; p++) {
+        rest.push({ k: i, pos: (p + 0.5) / counts[i], rad: radOf(i, counts[i]) });
+      }
+    }
+    // 同値は order 順（k が小さい方が先）
+    rest.sort(function (x, y) { return (x.pos - y.pos) || (x.k - y.k); });
+    for (i = 0; i < rest.length; i++) units.push([{ k: rest[i].k, rad: rest[i].rad }]);
+
+    // フィラー。ユニットと同数が理想（ユニット, フィラー, ユニット …）。細くなりすぎるなら減らす
+    var fillerDeg = degOf(fillerIdx);
+    var U = units.length;
+    var fk = U;
+    var thin = false;
+    if (fillerDeg / fk < MIN_PIECE_DEG) {
+      fk = Math.max(1, Math.floor(fillerDeg / MIN_PIECE_DEG));
+      thin = true;
+    }
+    var fillerRad = radOf(fillerIdx, fk);
+    // ユニット j の後ろへフィラーを置くか。fk < U のときは均等に間引く（この場合だけ隣接を許す）
+    var after = [];
+    for (i = 0; i < U; i++) after.push(!thin);
+    if (thin) {
+      for (var q = 0; q < fk; q++) after[Math.floor((q * U) / fk)] = true;
+    }
+
+    var out = [];
+    for (i = 0; i < U; i++) {
+      for (var m = 0; m < units[i].length; m++) out.push(units[i][m]);
+      if (after[i]) out.push({ k: fillerIdx, rad: fillerRad });
+    }
+    return out;
   }
 
   // ---- Wheel 本体 ----
@@ -292,6 +373,7 @@ window.NV = window.NV || {};
   // opts.nearTarget … ニアミス（«惜しい»）で光らせる等級のID。null で無効。
   //   省略時は top を立てた等級（＝特賞）。それも無ければ ranks[0]。
   //   1個/2個/3個 のボーナス盤では null を渡して切る（120°の扇で «惜しい» は成立しない）
+  // opts.split … false で扇を割らない（既定 true）。ボーナス盤は 120°×3 のまま
   Wheel.prototype.setRanks = function (ranks, opts) {
     this._winSeg = null; // 扇を作り直すので前回の当たりの参照は捨てる
     this._pendingWin = null;
@@ -307,7 +389,7 @@ window.NV = window.NV || {};
       this._topRankId = target || ((ranks && ranks[0] && ranks[0].id) || null);
     }
     try {
-      this.segments = buildSegments(ranks);
+      this.segments = buildSegments(ranks, { split: !(opts && opts.split === false) });
     } catch (e) {
       console.warn("NV.Wheel.setRanks: セグメント生成に失敗。空盤にフォールバック", e);
       this.segments = buildSegments([]);
@@ -859,30 +941,49 @@ window.NV = window.NV || {};
   };
 
   // 盤面。ベタ塗りの扇と、境目の細い暗線だけ。
-  // ghost=true のときは境界線を省く（残像では見えないうえ、線が枚数ぶん増えて重い）
-  Wheel.prototype._drawFace = function (ctx, segments, radius, ghost) {
-    var i;
-    for (i = 0; i < segments.length; i++) {
+  // ghost=true のときは境界線を省く（残像では見えないうえ、線が枚数ぶん増えて重い）。
+  // 扇は13枚ほどに割ってあるので、同じ色の扇を1本のパスにまとめて色ごとに1回だけ fill する
+  // （残像で1フレーム最大11回呼ばれる。fill の回数を扇の枚数に比例させない）。
+  Wheel.prototype._faceGroups = function (segments) {
+    var fc = this._fc;
+    if (fc && fc.segs === segments) return fc.groups;
+    var groups = [], byColor = {};
+    for (var i = 0; i < segments.length; i++) {
       var seg = segments[i];
       var color = (seg.rank && seg.rank.color) || "#3A342B";
       if (seg.soldOut) color = desaturate(color, 12, 0.55);
+      var gi = byColor[color];
+      if (gi == null) { gi = groups.length; byColor[color] = gi; groups.push({ color: color, list: [] }); }
+      groups[gi].list.push(seg);
+    }
+    this._fc = { segs: segments, groups: groups };
+    return groups;
+  };
+
+  Wheel.prototype._drawFace = function (ctx, segments, radius, ghost) {
+    var i, j;
+    var groups = this._faceGroups(segments);
+    for (i = 0; i < groups.length; i++) {
+      var list = groups[i].list;
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, seg.start - Math.PI / 2, seg.end - Math.PI / 2, false);
-      ctx.closePath();
-      ctx.fillStyle = color;
+      for (j = 0; j < list.length; j++) {
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, radius, list[j].start - Math.PI / 2, list[j].end - Math.PI / 2, false);
+        ctx.closePath();
+      }
+      ctx.fillStyle = groups[i].color;
       ctx.fill();
     }
     if (ghost || segments.length < 2) return;
     ctx.lineWidth = Math.max(1, radius * 0.006);
     ctx.strokeStyle = "rgba(9,8,7,0.55)";
+    ctx.beginPath();
     for (i = 0; i < segments.length; i++) {
       var a = segments[i].start - Math.PI / 2;
-      ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(Math.cos(a) * radius, Math.sin(a) * radius);
-      ctx.stroke();
     }
+    ctx.stroke();
   };
 
   // 縁。真鍮の細い環1本。回転中はその上を光が走る
@@ -1052,18 +1153,19 @@ window.NV = window.NV || {};
       if (!(ramp >= 0)) ramp = 0;
     }
 
+    // 当たり以外を1本のパスにまとめて1回で沈める（扇が13枚あっても fill は1回）
     ctx.save();
+    ctx.beginPath();
     for (var i = 0; i < segments.length; i++) {
       if (segments[i] === seg) continue;
-      ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius,
         segments[i].start + this.rotation - Math.PI / 2,
         segments[i].end + this.rotation - Math.PI / 2, false);
       ctx.closePath();
-      ctx.fillStyle = "rgba(6,5,4," + (0.58 * ramp).toFixed(3) + ")";
-      ctx.fill();
     }
+    ctx.fillStyle = "rgba(6,5,4," + (0.58 * ramp).toFixed(3) + ")";
+    ctx.fill();
     ctx.restore();
 
     var pulse = this._reducedMotion
@@ -1185,7 +1287,8 @@ window.NV = window.NV || {};
   // 検証用の内部関数の限定公開（ブラウザ実行には影響しない。Node等でのテスト専用）
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
-      buildSegments: buildSegments, desaturate: desaturate
+      buildSegments: buildSegments, desaturate: desaturate,
+      TARGET_PIECE_DEG: TARGET_PIECE_DEG, MIN_PIECE_DEG: MIN_PIECE_DEG
     };
   }
 })();
